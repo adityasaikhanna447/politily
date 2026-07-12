@@ -82,6 +82,24 @@ export async function ensureDatabase(db: D1Database) {
   await seedSources(db);
 }
 
+export async function markStaleRunsFailed(db: D1Database, olderThanMinutes = 10) {
+  const cutoff = new Date(Date.now() - olderThanMinutes * 60 * 1000).toISOString();
+  await db
+    .prepare(
+      `UPDATE scan_runs
+      SET finished_at = ?, status = ?, message = ?
+      WHERE status = ? AND started_at < ?`
+    )
+    .bind(
+      new Date().toISOString(),
+      "failed",
+      "Scan timed out before completion. The next scheduled scan will continue with a smaller source batch.",
+      "running",
+      cutoff
+    )
+    .run();
+}
+
 async function seedSources(db: D1Database) {
   await db.batch(
     DEFAULT_SOURCES.map((source) =>

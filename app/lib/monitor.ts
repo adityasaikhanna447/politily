@@ -15,6 +15,7 @@ import {
   listSources,
   listStorySources,
   markEmailSent,
+  markStaleRunsFailed,
   newId,
   saveBrief,
   updateSourceChecked,
@@ -58,13 +59,18 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
   }
 
   await ensureDatabase(env.DB);
+  await markStaleRunsFailed(env.DB);
   const run = await createRun(env.DB);
   const errors: string[] = [];
 
   try {
     const threshold = numberEnv(env.POLITILY_SCORE_THRESHOLD, 72);
     const maxBriefs = numberEnv(env.POLITILY_MAX_DEEP_BRIEFS_PER_RUN, 1);
-    const sources = (await listSources(env.DB)).filter((source) => source.active);
+    const maxSources = numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 8);
+    const fetchTimeoutMs = numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 10000);
+    const sources = rotateSources(
+      (await listSources(env.DB)).filter((source) => source.active)
+    ).slice(0, Math.max(1, maxSources));
     const recentStories = await listRecentStories(env.DB, 160);
     const triggeredStories: StoredStory[] = [];
     let scannedCount = 0;
@@ -73,7 +79,7 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
 
     for (const source of sources) {
       try {
-        const signals = await fetchSignals(source);
+        const signals = await fetchSignals(source, fetchTimeoutMs);
         scannedCount += signals.length;
         await updateSourceChecked(env.DB, source.id);
 
@@ -125,6 +131,7 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
         }
       } catch (error) {
         errors.push(`${source.name}: ${errorMessage(error)}`);
+        await updateSourceChecked(env.DB, source.id);
       }
     }
 
@@ -184,13 +191,13 @@ export async function generateAndSaveBrief(env: RuntimeEnv, storyId: string) {
   };
 }
 
-async function fetchSignals(source: SignalSource): Promise<RawSignal[]> {
-  const response = await fetch(source.url, {
+async function fetchSignals(source: SignalSource, timeoutMs: number): Promise<RawSignal[]> {
+  const response = await fetchWithTimeout(source.url, {
     headers: {
       "User-Agent": "Politily/0.1 political-signal-monitor",
       Accept: source.type === "gdelt" ? "application/json" : "application/rss+xml,text/xml,text/html,application/xhtml+xml",
     },
-  });
+  }, timeoutMs);
 
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
@@ -221,6 +228,42 @@ async function fetchSignals(source: SignalSource): Promise<RawSignal[]> {
   }
 
   return parseFeed(text, source);
+}
+
+function rotateSources(sources: SignalSource[]) {
+  return [...sources].sort((a, b) => {
+    const aChecked = a.lastCheckedAt ? Date.parse(a.lastCheckedAt) : 0;
+    const bChecked = b.lastCheckedAt ? Date.parse(b.lastCheckedAt) : 0;
+    if (aChecked !== bChecked) {
+      return aChecked - bChecked;
+    }
+
+    return b.priority - a.priority;
+  });
+}
+
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  timeoutMs: number
+) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`Timed out after ${timeoutMs}ms`);
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function parseFeed(xml: string, source: SignalSource): RawSignal[] {

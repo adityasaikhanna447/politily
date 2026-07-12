@@ -18,6 +18,8 @@ Copy `.env.example` and set these in local development and production:
 - `APP_BASE_URL`
 - `POLITILY_SCORE_THRESHOLD`
 - `POLITILY_MAX_DEEP_BRIEFS_PER_RUN`
+- `POLITILY_MAX_SOURCES_PER_RUN`
+- `POLITILY_FETCH_TIMEOUT_MS`
 
 ## Cloudflare Runtime
 
@@ -28,6 +30,13 @@ The app exports a Worker `scheduled()` handler in `worker/index.ts`. Configure a
 ```
 
 That checks sources every 15 minutes. Use a lower frequency only if your free-tier limits and Gemini budget can handle it.
+
+For stable free-tier scans, start with:
+
+```txt
+POLITILY_MAX_SOURCES_PER_RUN=8
+POLITILY_FETCH_TIMEOUT_MS=10000
+```
 
 ## Netlify Fallback Cron
 

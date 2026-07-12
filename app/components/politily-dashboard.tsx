@@ -516,6 +516,8 @@ function SetupPanel({ state }: { state: DashboardState }) {
     ["ALERT_EMAIL", state.config.emailReady ? "Ready" : "Destination inbox"],
     ["ALERT_FROM_EMAIL", state.config.emailReady ? "Ready" : "Verified sender"],
     ["POLITILY_SCORE_THRESHOLD", `${state.config.threshold}`],
+    ["POLITILY_MAX_SOURCES_PER_RUN", "8 recommended for stable Worker scans"],
+    ["POLITILY_FETCH_TIMEOUT_MS", "10000 recommended per source"],
   ];
 
   return (
