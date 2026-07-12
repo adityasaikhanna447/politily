@@ -18,7 +18,8 @@ What to do:
 Important:
 Do not upload the parent folder named _BEGINNER_UPLOAD_PACKAGE.
 Only upload the contents of 01_UPLOAD_THIS_TO_GITHUB.
+If GitHub refuses hidden files like .openai or .gitignore, do not panic.
+The important visible file openai-hosting.json is now included for Cloudflare.
 
 After GitHub upload:
 Go to Cloudflare and connect this GitHub repository.
-
