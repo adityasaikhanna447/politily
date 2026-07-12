@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { DashboardState, StoredStory } from "../lib/types";
+import type { DashboardState, SignalSource, StoredStory } from "../lib/types";
 import { getDemoState } from "../lib/demo-data";
 
 type View = "signals" | "brief" | "sources" | "setup";
@@ -12,6 +12,8 @@ export function PolitilyDashboard() {
   const [view, setView] = useState<View>("signals");
   const [status, setStatus] = useState("Connecting to Politily");
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
+  const [scope, setScope] = useState("all");
 
   useEffect(() => {
     void refreshState();
@@ -82,9 +84,23 @@ export function PolitilyDashboard() {
   }
 
   const stories = state?.stories ?? [];
+  const filteredStories = useMemo(
+    () =>
+      stories.filter((story) => {
+        const haystack = `${story.title} ${story.summary} ${story.sourceName} ${story.tags.join(" ")}`.toLowerCase();
+        const matchesQuery = !query.trim() || haystack.includes(query.trim().toLowerCase());
+        const matchesScope =
+          scope === "all" ||
+          story.tags.includes(scope) ||
+          story.sourceCountry.toLowerCase().includes(scope) ||
+          story.sourceName.toLowerCase().includes(scope);
+        return matchesQuery && matchesScope;
+      }),
+    [stories, query, scope]
+  );
   const selectedStory = useMemo(
-    () => stories.find((story) => story.id === selectedId) ?? stories[0],
-    [stories, selectedId]
+    () => filteredStories.find((story) => story.id === selectedId) ?? filteredStories[0] ?? stories[0],
+    [filteredStories, stories, selectedId]
   );
   const triggeredCount = stories.filter((story) => story.totalScore >= (state?.config.threshold ?? 72)).length;
   const latestRun = state?.runs[0];
@@ -123,8 +139,8 @@ export function PolitilyDashboard() {
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase text-[var(--muted)]">{status}</p>
-                <h2 className="mt-1 text-2xl font-bold tracking-normal">
-                  Signal feed, deep context, creator script
+              <h2 className="mt-1 text-2xl font-bold tracking-normal">
+                  Newsroom war room for political evidence
                 </h2>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -161,8 +177,29 @@ export function PolitilyDashboard() {
                 </div>
                 {state?.demoMode ? <Badge label="Demo" tone="gold" /> : <Badge label="Live" tone="green" />}
               </div>
+              <div className="grid gap-2 border-b border-[var(--line)] bg-[var(--panel)] px-4 py-3 sm:grid-cols-[1fr_148px]">
+                <input
+                  className="h-10 rounded-md border border-[var(--line)] bg-[var(--background)] px-3 text-sm outline-none"
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search issue, party, state, person, institution"
+                  value={query}
+                />
+                <select
+                  className="h-10 rounded-md border border-[var(--line)] bg-[var(--background)] px-3 text-sm font-semibold outline-none"
+                  onChange={(event) => setScope(event.target.value)}
+                  value={scope}
+                >
+                  <option value="all">All desks</option>
+                  <option value="india">India</option>
+                  <option value="election">Election</option>
+                  <option value="courts">Courts</option>
+                  <option value="geopolitics">Geopolitics</option>
+                  <option value="party-politics">Party</option>
+                  <option value="public-order">Public order</option>
+                </select>
+              </div>
               <div className="no-scrollbar max-h-[calc(100vh-194px)] overflow-auto p-4">
-                {stories.map((story) => (
+                {filteredStories.map((story) => (
                   <StoryRow
                     active={selectedStory?.id === story.id}
                     key={story.id}
@@ -175,6 +212,11 @@ export function PolitilyDashboard() {
                     story={story}
                   />
                 ))}
+                {filteredStories.length === 0 ? (
+                  <div className="rounded-md border border-[var(--line)] bg-[var(--panel)] p-4 text-sm text-[var(--muted)]">
+                    No signals match this desk filter yet.
+                  </div>
+                ) : null}
               </div>
             </section>
 
@@ -304,6 +346,12 @@ function SignalDetail({
         <ScoreBlock label="Viral potential" value={story.viralPotential} />
       </div>
 
+      <div className="mt-5 grid gap-4 xl:grid-cols-3">
+        <ResearchCard label="Evidence posture" value={story.brief?.evidenceGrade ?? "Needs brief"} />
+        <ResearchCard label="Primary trail" value={story.sourceType === "official" || story.sourceType === "html" ? "Official source" : "Needs primary docs"} />
+        <ResearchCard label="Source links" value={`${story.sourceLinks?.length ?? 0} attached`} />
+      </div>
+
       <div className="mt-5 rounded-md border border-[var(--line)] bg-[var(--panel)] p-4">
         <h4 className="text-sm font-bold">Signal tags</h4>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -318,6 +366,15 @@ function SignalDetail({
         <a className="mt-2 block break-words text-sm font-semibold text-[var(--blue)]" href={story.url} rel="noreferrer" target="_blank">
           {story.url}
         </a>
+      </div>
+
+      <div className="mt-5 rounded-md border border-[var(--line)] bg-[var(--panel)] p-4">
+        <h4 className="text-sm font-bold">Verification queue</h4>
+        <ul className="mt-3 space-y-2 text-sm leading-6 text-[var(--muted)]">
+          <li>Find the official order, court record, party statement, or government release behind this signal.</li>
+          <li>Compare agency/media reporting with at least one counter-position.</li>
+          <li>Use regional sources for local history before calling anything propaganda, censorship, or public-order risk.</li>
+        </ul>
       </div>
     </div>
   );
@@ -360,14 +417,27 @@ function BriefDetail({
       <h3 className="mt-1 text-2xl font-black leading-tight tracking-normal">{brief.briefTitle}</h3>
       <p className="mt-3 max-w-3xl text-lg font-semibold leading-7 text-[var(--red)]">{brief.hook}</p>
 
+      <div className="mt-5 grid gap-4 xl:grid-cols-4">
+        <ResearchCard label="Evidence grade" value={brief.evidenceGrade} />
+        <ResearchCard label="Timeline items" value={`${brief.timeline?.length ?? 0}`} />
+        <ResearchCard label="Claims to check" value={`${brief.claimMatrix?.length ?? 0}`} />
+        <ResearchCard label="Missing evidence" value={`${brief.missingEvidence?.length ?? 0}`} />
+      </div>
+
       <div className="mt-5 grid gap-4 xl:grid-cols-2">
         <TextPanel title="What happened" text={brief.whatHappened} />
         <TextPanel title="Why it matters" text={brief.whyItMatters} />
         <TextPanel title="Historical context" text={brief.historicalContext} />
         <TextPanel title="Geographical context" text={brief.geographicalContext} />
+        <TextPanel title="Regional context" text={brief.regionalContext || "No regional context generated yet."} />
       </div>
 
       <ListPanel title="Facts and figures" items={brief.factsAndFigures} />
+      <ListPanel title="Timeline" items={brief.timeline ?? []} />
+      <ListPanel title="Claim matrix" items={brief.claimMatrix ?? []} />
+      <ListPanel title="Primary documents to obtain" items={brief.primaryDocuments ?? []} />
+      <ListPanel title="Missing evidence" items={brief.missingEvidence ?? []} />
+      <ListPanel title="Verification protocol" items={brief.verificationProtocol ?? []} />
       <ListPanel title="Multiple narratives" items={brief.narratives} />
       <ListPanel title="What happens next" items={brief.whatHappensNext} />
 
@@ -398,24 +468,40 @@ function BriefDetail({
 }
 
 function SourceLibrary({ state }: { state: DashboardState }) {
+  const grouped = groupSources(state.sources);
+
   return (
     <div className="p-5">
       <p className="text-xs font-semibold uppercase text-[var(--muted)]">Source library</p>
-      <h3 className="mt-1 text-2xl font-black">Signals watched by Politily</h3>
-      <div className="mt-5 overflow-hidden rounded-md border border-[var(--line)] bg-[var(--panel)]">
-        <div className="grid grid-cols-[1fr_92px_90px] border-b border-[var(--line)] bg-[var(--panel-strong)] px-4 py-3 text-xs font-bold uppercase text-[var(--muted)]">
-          <span>Source</span>
-          <span>Region</span>
-          <span>Status</span>
-        </div>
-        {state.sources.map((source) => (
-          <div className="grid grid-cols-[1fr_92px_90px] gap-3 border-b border-[var(--line)] px-4 py-3 last:border-b-0" key={source.id}>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-bold">{source.name}</p>
-              <p className="truncate text-xs text-[var(--muted)]">{source.url}</p>
+      <h3 className="mt-1 text-2xl font-black">Source hierarchy and reliability desk</h3>
+      <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
+        Politily should treat official records as the first layer, agencies and national media as triangulation,
+        regional reporting as context, and fact-check/legal sources as verification. No single source is truth by default.
+      </p>
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-3">
+        <ResearchCard label="Active sources" value={`${state.sources.filter((source) => source.active).length}`} />
+        <ResearchCard label="Primary layer" value={`${state.sources.filter((source) => source.category.toLowerCase().includes("primary")).length}`} />
+        <ResearchCard label="Last scan runs" value={`${state.runs.length}`} />
+      </div>
+
+      <div className="mt-5 space-y-5">
+        {grouped.map(([category, sources]) => (
+          <div className="overflow-hidden rounded-md border border-[var(--line)] bg-[var(--panel)]" key={category}>
+            <div className="border-b border-[var(--line)] bg-[var(--panel-strong)] px-4 py-3">
+              <p className="text-xs font-bold uppercase text-[var(--muted)]">{category}</p>
             </div>
-            <span className="text-sm text-[var(--muted)]">{source.region}</span>
-            <Badge label={source.active ? "Active" : "Paused"} tone={source.active ? "green" : "gold"} />
+            {sources.map((source) => (
+              <div className="grid gap-3 border-b border-[var(--line)] px-4 py-3 last:border-b-0 md:grid-cols-[1fr_110px_92px_90px]" key={source.id}>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold">{source.name}</p>
+                  <p className="truncate text-xs text-[var(--muted)]">{source.url}</p>
+                </div>
+                <span className="text-sm font-semibold text-[var(--muted)]">{source.region}</span>
+                <span className="text-sm text-[var(--muted)]">{source.type.toUpperCase()}</span>
+                <Badge label={source.active ? "Active" : "Paused"} tone={source.active ? "green" : "gold"} />
+              </div>
+            ))}
           </div>
         ))}
       </div>
@@ -450,6 +536,15 @@ function SetupPanel({ state }: { state: DashboardState }) {
           Cloudflare Worker cron runs the scanner, D1 stores seen stories, Gemini creates research briefs, and Resend sends alerts.
         </p>
       </div>
+      <div className="mt-5 rounded-md border border-[var(--line)] bg-[var(--panel)] p-4">
+        <h4 className="text-sm font-bold">Research standard</h4>
+        <ul className="mt-3 space-y-2 text-sm leading-6 text-[var(--muted)]">
+          <li>Primary documents first: orders, filings, court records, official statements, data releases.</li>
+          <li>Agency and national media second: useful for triangulation, never automatic truth.</li>
+          <li>Regional context third: history, local language reporting, state politics, community tensions.</li>
+          <li>Publish only after the claim matrix separates facts, allegations, spin, and missing evidence.</li>
+        </ul>
+      </div>
     </div>
   );
 }
@@ -468,6 +563,15 @@ function ScoreBlock({ label, value }: { label: string; value: number }) {
   );
 }
 
+function ResearchCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-[var(--line)] bg-[var(--panel)] p-4">
+      <p className="text-xs font-semibold uppercase text-[var(--muted)]">{label}</p>
+      <p className="mt-2 break-words text-lg font-black text-[var(--ink)]">{value}</p>
+    </div>
+  );
+}
+
 function TextPanel({ title, text }: { title: string; text: string }) {
   return (
     <div className="rounded-md border border-[var(--line)] bg-[var(--panel)] p-4">
@@ -478,6 +582,10 @@ function TextPanel({ title, text }: { title: string; text: string }) {
 }
 
 function ListPanel({ title, items }: { title: string; items: string[] }) {
+  if (!items.length) {
+    return null;
+  }
+
   return (
     <div className="mt-4 rounded-md border border-[var(--line)] bg-[var(--panel)] p-4">
       <h4 className="text-sm font-bold">{title}</h4>
@@ -490,6 +598,18 @@ function ListPanel({ title, items }: { title: string; items: string[] }) {
       </ul>
     </div>
   );
+}
+
+function groupSources(sources: SignalSource[]): Array<[string, SignalSource[]]> {
+  const groups = new Map<string, SignalSource[]>();
+  sources.forEach((source) => {
+    const key = source.category || "Other";
+    const list = groups.get(key) ?? [];
+    list.push(source);
+    groups.set(key, list);
+  });
+
+  return Array.from(groups.entries()).sort(([left], [right]) => left.localeCompare(right));
 }
 
 function Badge({ label, tone }: { label: string; tone: "red" | "green" | "gold" | "blue" }) {

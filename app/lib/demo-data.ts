@@ -22,6 +22,34 @@ const demoBrief: PolitilyBrief = {
     "Separate declared party finance data from allegations and commentary.",
   ],
   sourceConfidence: "Demo brief. Replace with live Gemini generation after setting GEMINI_API_KEY.",
+  evidenceGrade: "reported",
+  timeline: [
+    "Initial signal - campaign finance debate enters the news cycle.",
+    "Verification step - locate official filings, court orders, or commission records.",
+    "Context step - compare present claims with earlier legal and institutional positions.",
+  ],
+  claimMatrix: [
+    "Transparency claim - raised by reform advocates - verify through official finance disclosures.",
+    "Compliance claim - usually raised by parties - verify through filings, audit records, and court material.",
+    "Influence claim - often political framing - needs documentary proof before publication.",
+  ],
+  primaryDocuments: [
+    "Election Commission disclosures",
+    "Court orders or petitions",
+    "Party finance filings and official statements",
+  ],
+  missingEvidence: [
+    "Direct document proving the specific allegation.",
+    "Response from the named party or institution.",
+    "Independent corroboration from credible reporting.",
+  ],
+  regionalContext:
+    "Political funding stories can differ by state because local business networks, caste blocs, and alliance arithmetic shape incentives.",
+  verificationProtocol: [
+    "Open the primary document first.",
+    "Check whether the claim is a record, allegation, or interpretation.",
+    "Compare at least one official source, one agency/media source, and one counter-position.",
+  ],
   narratives: [
     "Transparency versus political privacy",
     "Institutional accountability versus party autonomy",

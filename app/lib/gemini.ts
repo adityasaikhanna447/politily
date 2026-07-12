@@ -60,6 +60,13 @@ export async function generateBriefWithGemini(
     ...parsed,
     keyPeople: normaliseList(parsed.keyPeople),
     factsAndFigures: normaliseList(parsed.factsAndFigures),
+    evidenceGrade: normaliseEvidenceGrade(parsed.evidenceGrade),
+    timeline: normaliseList(parsed.timeline),
+    claimMatrix: normaliseList(parsed.claimMatrix),
+    primaryDocuments: normaliseList(parsed.primaryDocuments),
+    missingEvidence: normaliseList(parsed.missingEvidence),
+    regionalContext: String(parsed.regionalContext || ""),
+    verificationProtocol: normaliseList(parsed.verificationProtocol),
     narratives: normaliseList(parsed.narratives),
     whatHappensNext: normaliseList(parsed.whatHappensNext),
     citedUrls: normaliseList(parsed.citedUrls).concat(sourceLinks.map((link) => link.url)).slice(0, 12),
@@ -75,7 +82,14 @@ function buildPrompt(story: StoredStory, sourceLinks: StorySourceLink[]) {
 
   return `You are Politily, an original political education and narrative research assistant for a creator in India.
 
-Create a fact-first, source-aware political brief. Use an original Politily explainer voice: sharp hook, clear context, historical memory, multiple perspectives, and creator-ready structure. Do not imitate any living creator or YouTube channel.
+Create a fact-first, source-aware political brief for a newsroom research desk. Use an original Politily explainer voice: sharp hook, clear context, historical memory, multiple perspectives, and creator-ready structure. Do not imitate any living creator or YouTube channel.
+
+Priority rules:
+1. Separate confirmed facts, reported claims, allegations, and political framing.
+2. Prefer primary documents, court records, government orders, official statements, parliamentary records, and direct party releases over media summaries.
+3. Use agencies and media as triangulation, not as final proof.
+4. If a story needs historical context, name the historical tensions and say exactly what still needs verification.
+5. If the source base is thin, say so clearly. Do not invent facts, dates, laws, people, numbers, or quotes.
 
 Story:
 Title: ${story.title}
@@ -100,6 +114,13 @@ Return only valid JSON with this exact shape:
   "keyPeople": ["person or institution"],
   "factsAndFigures": ["verifiable fact or number, with caveat if needed"],
   "sourceConfidence": "how reliable the available source base is",
+  "evidenceGrade": "primary-backed | multi-source | reported | disputed | thin",
+  "timeline": ["date or period - event - source/caveat"],
+  "claimMatrix": ["claim - who says it - evidence level - what would verify/refute it"],
+  "primaryDocuments": ["official order, court record, filing, statement, dataset, or document to obtain"],
+  "missingEvidence": ["specific missing source or unresolved fact"],
+  "regionalContext": "state/regional/social/history context needed to understand the story",
+  "verificationProtocol": ["step a researcher should do before publishing"],
   "narratives": ["major perspective or competing interpretation"],
   "whatHappensNext": ["watch item"],
   "videoScript": "structured creator script with hook, context, history, evidence, multiple perspectives, what next, CTA",
@@ -152,6 +173,32 @@ function templateBrief(story: StoredStory, sourceLinks: StorySourceLink[]): Poli
     ],
     sourceConfidence:
       "Template mode. Set GEMINI_API_KEY for deeper automated context, and verify primary documents before publishing.",
+    evidenceGrade: "thin",
+    timeline: [
+      `Detected - ${story.title} - initial source: ${story.sourceName}`,
+      "Next - locate primary documents, direct statements, and independent corroboration.",
+    ],
+    claimMatrix: [
+      "Main claim - reported by the detected source - unverified until primary records are checked.",
+      "Political interpretation - may be partisan framing - compare ruling, opposition, institution, and affected community positions.",
+    ],
+    primaryDocuments: [
+      "Official order, notification, court record, or parliamentary document connected to the story.",
+      "Direct statements from named institutions and parties.",
+    ],
+    missingEvidence: [
+      "Primary document link.",
+      "Independent corroboration from at least two credible sources.",
+      "Regional historical background from reliable records.",
+    ],
+    regionalContext:
+      "Map the state, community, legal, electoral, and historical tensions before turning the signal into a public narrative.",
+    verificationProtocol: [
+      "Find the primary document before treating the claim as fact.",
+      "Check agency copy and at least one independent national source.",
+      "Check regional reporting for local context and affected voices.",
+      "Label allegations, claims, and confirmed records separately.",
+    ],
     narratives: [
       "Institutional accountability",
       "Party strategy",
@@ -183,4 +230,17 @@ function normaliseList(value: unknown): string[] {
   }
 
   return [];
+}
+
+function normaliseEvidenceGrade(value: unknown): PolitilyBrief["evidenceGrade"] {
+  const allowed: PolitilyBrief["evidenceGrade"][] = [
+    "primary-backed",
+    "multi-source",
+    "reported",
+    "disputed",
+    "thin",
+  ];
+  return allowed.includes(value as PolitilyBrief["evidenceGrade"])
+    ? (value as PolitilyBrief["evidenceGrade"])
+    : "thin";
 }

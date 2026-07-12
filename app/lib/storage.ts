@@ -87,9 +87,17 @@ async function seedSources(db: D1Database) {
     DEFAULT_SOURCES.map((source) =>
       db
         .prepare(
-          `INSERT OR IGNORE INTO sources
+          `INSERT INTO sources
           (id, name, type, url, region, category, priority, active)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            type = excluded.type,
+            url = excluded.url,
+            region = excluded.region,
+            category = excluded.category,
+            priority = excluded.priority,
+            active = excluded.active`
         )
         .bind(
           source.id,

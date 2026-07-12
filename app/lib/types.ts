@@ -1,4 +1,13 @@
-export type SourceType = "gdelt" | "rss" | "official" | "press" | "party";
+export type SourceType =
+  | "gdelt"
+  | "rss"
+  | "official"
+  | "press"
+  | "party"
+  | "html"
+  | "research"
+  | "factcheck"
+  | "legal";
 
 export type StoryStatus = "watching" | "triggered" | "briefed" | "emailed";
 
@@ -88,6 +97,13 @@ export interface PolitilyBrief {
   keyPeople: string[];
   factsAndFigures: string[];
   sourceConfidence: string;
+  evidenceGrade: "primary-backed" | "multi-source" | "reported" | "disputed" | "thin";
+  timeline: string[];
+  claimMatrix: string[];
+  primaryDocuments: string[];
+  missingEvidence: string[];
+  regionalContext: string;
+  verificationProtocol: string[];
   narratives: string[];
   whatHappensNext: string[];
   videoScript: string;

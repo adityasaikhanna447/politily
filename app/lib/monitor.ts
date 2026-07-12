@@ -188,7 +188,7 @@ async function fetchSignals(source: SignalSource): Promise<RawSignal[]> {
   const response = await fetch(source.url, {
     headers: {
       "User-Agent": "Politily/0.1 political-signal-monitor",
-      Accept: source.type === "gdelt" ? "application/json" : "application/rss+xml,text/xml,text/html",
+      Accept: source.type === "gdelt" ? "application/json" : "application/rss+xml,text/xml,text/html,application/xhtml+xml",
     },
   });
 
@@ -215,8 +215,12 @@ async function fetchSignals(source: SignalSource): Promise<RawSignal[]> {
     })).filter((signal) => signal.title && signal.url);
   }
 
-  const xml = await response.text();
-  return parseFeed(xml, source);
+  const text = await response.text();
+  if (source.type === "html") {
+    return parseHtmlPage(text, source);
+  }
+
+  return parseFeed(text, source);
 }
 
 function parseFeed(xml: string, source: SignalSource): RawSignal[] {
@@ -258,6 +262,87 @@ function extractTag(value: string, tag: string) {
 function extractHref(value: string) {
   const match = value.match(/<link[^>]+href=["']([^"']+)["']/i);
   return match?.[1] ?? "";
+}
+
+function parseHtmlPage(html: string, source: SignalSource): RawSignal[] {
+  const withoutNoise = html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, " ");
+  const baseUrl = new URL(source.url);
+  const seen = new Set<string>();
+
+  return Array.from(
+    withoutNoise.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)
+  )
+    .map((match): RawSignal | null => {
+      const href = clean(String(match[1] ?? ""));
+      const title = clean(String(match[2] ?? ""));
+      if (!href || !title || title.length < 18) {
+        return null;
+      }
+
+      const url = resolveUrl(href, baseUrl);
+      if (!url || seen.has(url) || !looksPolitical(title)) {
+        return null;
+      }
+
+      seen.add(url);
+      return {
+        title,
+        summary: `Official page item from ${source.name}. Verify the linked document before publication.`,
+        url,
+        sourceName: source.name,
+        sourceType: source.type,
+        sourceCountry: source.region,
+        language: "",
+        publishedAt: null,
+        sourceId: source.id,
+        sourcePriority: source.priority,
+      };
+    })
+    .filter((signal): signal is RawSignal => Boolean(signal))
+    .slice(0, 35);
+}
+
+function resolveUrl(value: string, baseUrl: URL) {
+  try {
+    const url = new URL(value, baseUrl);
+    if (!["http:", "https:"].includes(url.protocol)) {
+      return "";
+    }
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function looksPolitical(title: string) {
+  const text = title.toLowerCase();
+  const terms = [
+    "press",
+    "release",
+    "statement",
+    "minister",
+    "parliament",
+    "election",
+    "court",
+    "judgment",
+    "policy",
+    "bill",
+    "government",
+    "party",
+    "commission",
+    "india",
+    "foreign",
+    "official",
+    "notification",
+    "advisory",
+    "ban",
+    "rights",
+  ];
+
+  return terms.some((term) => text.includes(term));
 }
 
 function parseGdeltDate(value: string) {
