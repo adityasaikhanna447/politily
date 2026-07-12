@@ -1,0 +1,24 @@
+UPLOAD THIS FOLDER TO GITHUB
+
+What to do:
+
+1. Go to https://github.com
+2. Click New repository.
+3. Repository name: politily
+4. Choose Private if this is only for you, or Public if you want open source.
+5. Click Create repository.
+6. Click uploading an existing file.
+7. Open this folder on your computer:
+   01_UPLOAD_THIS_TO_GITHUB
+8. Select everything INSIDE this folder.
+9. Drag all selected files/folders into GitHub.
+10. Commit message: first politily upload
+11. Click Commit changes.
+
+Important:
+Do not upload the parent folder named _BEGINNER_UPLOAD_PACKAGE.
+Only upload the contents of 01_UPLOAD_THIS_TO_GITHUB.
+
+After GitHub upload:
+Go to Cloudflare and connect this GitHub repository.
+
