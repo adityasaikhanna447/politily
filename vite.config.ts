@@ -1,13 +1,10 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import { cloudflare } from "@cloudflare/vite-plugin";
-import hostingConfig from "./openai-hosting.json";
 import { sites } from "./build/sites-vite-plugin";
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "43c380f8-2924-41a1-9bdb-707cba1c22fe";
-
-const { d1, r2 } = hostingConfig;
 
 const localBindingConfig = {
   main: "./worker/index.ts",
@@ -15,23 +12,14 @@ const localBindingConfig = {
   triggers: {
     crons: ["*/15 * * * *"],
   },
-  d1_databases: d1
-    ? [
-        {
-          binding: d1,
-          database_name: "politily-d1",
-          database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
-        },
-      ]
-    : [],
-  r2_buckets: r2
-    ? [
-        {
-          binding: r2,
-          bucket_name: "site-creator-r2",
-        },
-      ]
-    : [],
+  d1_databases: [
+    {
+      binding: "DB",
+      database_name: "politily-d1",
+      database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
+    },
+  ],
+  r2_buckets: [],
 };
 
 export default defineConfig({
