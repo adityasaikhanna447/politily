@@ -1,12 +1,12 @@
 import type { SignalSource } from "./types";
 
-function gdeltUrl(query: string, maxrecords = 50) {
+function gdeltUrl(query: string, maxrecords = 20) {
   const params = new URLSearchParams({
     query,
     mode: "artlist",
     format: "json",
     maxrecords: String(maxrecords),
-    sort: "hybridrel",
+    sort: "datedesc",
   });
 
   return `https://api.gdeltproject.org/api/v2/doc/doc?${params.toString()}`;
@@ -38,6 +38,30 @@ export const DEFAULT_SOURCES: SignalSource[] = [
     region: "india/global",
     category: "Agency and media triangulation",
     priority: 94,
+    active: true,
+  },
+  {
+    id: "gdelt-news-agencies-india",
+    name: "PTI, ANI, Reuters, AP Watch",
+    type: "gdelt",
+    url: gdeltUrl(
+      `${indiaCoreTerms} (PTI OR ANI OR Reuters OR "Associated Press" OR "Press Trust of India")`
+    ),
+    region: "india/global",
+    category: "Agency wire verification",
+    priority: 95,
+    active: true,
+  },
+  {
+    id: "gdelt-international-india-politics",
+    name: "International Press on India",
+    type: "gdelt",
+    url: gdeltUrl(
+      `${indiaCoreTerms} (BBC OR Reuters OR "Associated Press" OR "Al Jazeera" OR "The Guardian" OR "Financial Times" OR "New York Times" OR "Washington Post" OR "The Diplomat")`
+    ),
+    region: "global",
+    category: "International reaction",
+    priority: 87,
     active: true,
   },
   {
@@ -86,6 +110,18 @@ export const DEFAULT_SOURCES: SignalSource[] = [
     region: "india",
     category: "Legal and rights context",
     priority: 93,
+    active: true,
+  },
+  {
+    id: "gdelt-film-censorship-public-order",
+    name: "Film, Culture, Censorship, Public Order",
+    type: "gdelt",
+    url: gdeltUrl(
+      'India (CBFC OR film OR cinema OR documentary OR censorship OR "public order" OR ban OR takedown OR propaganda OR Punjab OR Kashmir OR religion OR community)'
+    ),
+    region: "india",
+    category: "Culture war / censorship context",
+    priority: 90,
     active: true,
   },
   {
@@ -146,7 +182,7 @@ export const DEFAULT_SOURCES: SignalSource[] = [
     id: "prs-parliament-watch",
     name: "PRS Parliament Watch",
     type: "html",
-    url: "https://prsindia.org/parliamenttrack",
+    url: "https://prsindia.org/billtrack",
     region: "india",
     category: "Research / parliament",
     priority: 82,

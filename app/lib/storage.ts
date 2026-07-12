@@ -70,6 +70,12 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS story_sources_story_id_idx ON story_sources (story_id)`,
 ];
 
+const legacySourceIdsToPause = [
+  "gdelt-india-politics",
+  "gdelt-global-politics",
+  "pib-feed-slot",
+];
+
 type Row = Record<string, unknown>;
 
 export function newId(prefix: string) {
@@ -127,6 +133,12 @@ async function seedSources(db: D1Database) {
           source.priority,
           source.active ? 1 : 0
         )
+    )
+  );
+
+  await db.batch(
+    legacySourceIdsToPause.map((id) =>
+      db.prepare("UPDATE sources SET active = 0 WHERE id = ?").bind(id)
     )
   );
 }

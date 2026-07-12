@@ -219,7 +219,7 @@ async function fetchSignals(source: SignalSource, timeoutMs: number): Promise<Ra
       publishedAt: parseGdeltDate(String(article.seendate ?? "")),
       sourceId: source.id,
       sourcePriority: source.priority,
-    })).filter((signal) => signal.title && signal.url);
+    })).filter((signal) => signal.title && signal.url && !isNoiseSignal(signal.title, signal.summary));
   }
 
   const text = await response.text();
@@ -294,7 +294,7 @@ function parseFeed(xml: string, source: SignalSource): RawSignal[] {
         sourcePriority: source.priority,
       };
     })
-    .filter((signal) => signal.title && signal.url);
+    .filter((signal) => signal.title && signal.url && !isNoiseSignal(signal.title, signal.summary));
 }
 
 function extractTag(value: string, tag: string) {
@@ -326,7 +326,7 @@ function parseHtmlPage(html: string, source: SignalSource): RawSignal[] {
       }
 
       const url = resolveUrl(href, baseUrl);
-      if (!url || seen.has(url) || !looksPolitical(title)) {
+      if (!url || seen.has(url) || !looksPolitical(title) || isNoiseSignal(title, "")) {
         return null;
       }
 
@@ -386,6 +386,21 @@ function looksPolitical(title: string) {
   ];
 
   return terms.some((term) => text.includes(term));
+}
+
+function isNoiseSignal(title: string, summary: string) {
+  const text = `${title} ${summary}`.toLowerCase();
+  const noiseTerms = [
+    "test post",
+    "hello world",
+    "court masters and moderators",
+    "helpline numbers",
+    "telephone directory",
+    "tender notice",
+    "recruitment notice",
+  ];
+
+  return noiseTerms.some((term) => text.includes(term));
 }
 
 function parseGdeltDate(value: string) {
