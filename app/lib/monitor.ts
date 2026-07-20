@@ -66,8 +66,9 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
   try {
     const threshold = numberEnv(env.POLITILY_SCORE_THRESHOLD, 72);
     const maxBriefs = numberEnv(env.POLITILY_MAX_DEEP_BRIEFS_PER_RUN, 1);
-    const maxSources = numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 8);
-    const fetchTimeoutMs = numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 10000);
+    const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 4), 4);
+    const fetchTimeoutMs = Math.min(numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 6000), 6000);
+    const scanDeadline = Date.now() + 24000;
     const sources = rotateSources(
       (await listSources(env.DB)).filter((source) => source.active)
     ).slice(0, Math.max(1, maxSources));
@@ -78,6 +79,11 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
     let emailedCount = 0;
 
     for (const source of sources) {
+      if (Date.now() > scanDeadline) {
+        errors.push("Scan budget reached. Remaining sources will continue in the next cron run.");
+        break;
+      }
+
       try {
         const signals = await fetchSignals(source, fetchTimeoutMs);
         scannedCount += signals.length;
@@ -210,7 +216,7 @@ async function fetchSignals(source: SignalSource, timeoutMs: number): Promise<Ra
 
     return (data.articles ?? []).map((article) => ({
       title: clean(String(article.title ?? "")),
-      summary: clean(String(article.seendate ?? "")),
+      summary: summariseGdeltArticle(article, source),
       url: String(article.url ?? ""),
       sourceName: clean(String(article.domain ?? source.name)),
       sourceType: source.type,
@@ -219,7 +225,7 @@ async function fetchSignals(source: SignalSource, timeoutMs: number): Promise<Ra
       publishedAt: parseGdeltDate(String(article.seendate ?? "")),
       sourceId: source.id,
       sourcePriority: source.priority,
-    })).filter((signal) => signal.title && signal.url && !isNoiseSignal(signal.title, signal.summary));
+    })).filter((signal) => isUsableSignal(signal.title, signal.summary, signal.language) && !isNoiseSignal(signal.title, signal.summary));
   }
 
   const text = await response.text();
@@ -267,10 +273,10 @@ async function fetchWithTimeout(
 }
 
 function parseFeed(xml: string, source: SignalSource): RawSignal[] {
-  const items = Array.from(xml.matchAll(/<item\b[\s\S]*?<\/item>/gi)).slice(0, 35);
+  const items = Array.from(xml.matchAll(/<item\b[\s\S]*?<\/item>/gi)).slice(0, 18);
   const entries = items.length
     ? items.map((match) => match[0])
-    : Array.from(xml.matchAll(/<entry\b[\s\S]*?<\/entry>/gi)).slice(0, 35).map((match) => match[0]);
+    : Array.from(xml.matchAll(/<entry\b[\s\S]*?<\/entry>/gi)).slice(0, 18).map((match) => match[0]);
 
   return entries
     .map((entry) => {
@@ -294,7 +300,8 @@ function parseFeed(xml: string, source: SignalSource): RawSignal[] {
         sourcePriority: source.priority,
       };
     })
-    .filter((signal) => signal.title && signal.url && !isNoiseSignal(signal.title, signal.summary));
+    .filter((signal) => isUsableSignal(signal.title, signal.summary, signal.language) && !isNoiseSignal(signal.title, signal.summary))
+    .slice(0, 12);
 }
 
 function extractTag(value: string, tag: string) {
@@ -326,7 +333,7 @@ function parseHtmlPage(html: string, source: SignalSource): RawSignal[] {
       }
 
       const url = resolveUrl(href, baseUrl);
-      if (!url || seen.has(url) || !looksPolitical(title) || isNoiseSignal(title, "")) {
+      if (!url || seen.has(url) || !looksPolitical(title) || isNoiseSignal(title, "") || !isUsableSignal(title, "", "")) {
         return null;
       }
 
@@ -345,7 +352,7 @@ function parseHtmlPage(html: string, source: SignalSource): RawSignal[] {
       };
     })
     .filter((signal): signal is RawSignal => Boolean(signal))
-    .slice(0, 35);
+    .slice(0, 18);
 }
 
 function resolveUrl(value: string, baseUrl: URL) {
@@ -413,18 +420,56 @@ function parseGdeltDate(value: string) {
   return new Date(`${year}-${month}-${day}T${hour}:${minute}:00Z`).toISOString();
 }
 
+function summariseGdeltArticle(article: Record<string, unknown>, source: SignalSource) {
+  const domain = clean(String(article.domain ?? source.name));
+  const country = clean(String(article.sourcecountry ?? source.region));
+  const date = parseGdeltDate(String(article.seendate ?? ""));
+  const seen = date ? new Date(date).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }) : "recently";
+  return `Reported by ${domain || source.name} (${country || source.region}) on ${seen}. Use this as a signal, then verify with primary documents, agency copy, and regional context before scripting.`;
+}
+
 function parseDate(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function clean(value: string) {
-  return decodeEntities(value)
+  return decodeMojibake(decodeEntities(value))
     .replace(/<!\[CDATA\[/g, "")
     .replace(/\]\]>/g, "")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function isUsableSignal(title: string, summary: string, language?: string) {
+  if (!title || !title.trim()) {
+    return false;
+  }
+
+  if (language && language.toLowerCase() !== "english" && language.toLowerCase() !== "en") {
+    return false;
+  }
+
+  const text = `${title} ${summary}`;
+  if (/[\u0900-\u097f]/.test(text) || /[à¤à¥ÃÂâ]/.test(text)) {
+    return false;
+  }
+
+  return /[a-z]/i.test(title);
+}
+
+function decodeMojibake(value: string) {
+  if (!/[ÃÂà¤à¥â]/.test(value)) {
+    return value;
+  }
+
+  try {
+    const bytes = Uint8Array.from(value, (char) => char.charCodeAt(0) & 0xff);
+    return new TextDecoder("utf-8").decode(bytes);
+  } catch {
+    return value;
+  }
 }
 
 function decodeEntities(value: string) {

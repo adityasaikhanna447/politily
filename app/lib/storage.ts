@@ -288,6 +288,15 @@ export async function addStorySource(
   db: D1Database,
   link: Omit<StorySourceLink, "id" | "createdAt">
 ) {
+  const existing = await db
+    .prepare("SELECT id FROM story_sources WHERE story_id = ? AND url = ? AND source_name = ? LIMIT 1")
+    .bind(link.storyId, link.url, link.sourceName)
+    .first<Row>();
+
+  if (existing) {
+    return;
+  }
+
   await db
     .prepare(
       `INSERT OR IGNORE INTO story_sources
@@ -303,7 +312,20 @@ export async function listStorySources(
   storyId: string
 ): Promise<StorySourceLink[]> {
   const result = await db
-    .prepare("SELECT * FROM story_sources WHERE story_id = ? ORDER BY created_at DESC")
+    .prepare(
+      `SELECT
+        MIN(id) AS id,
+        story_id,
+        title,
+        url,
+        source_name,
+        published_at,
+        MIN(created_at) AS created_at
+      FROM story_sources
+      WHERE story_id = ?
+      GROUP BY story_id, url, source_name, title, published_at
+      ORDER BY created_at DESC`
+    )
     .bind(storyId)
     .all<Row>();
 

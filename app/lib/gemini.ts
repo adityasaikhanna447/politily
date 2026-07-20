@@ -17,6 +17,7 @@ export async function generateBriefWithGemini(
   }
 
   const model = env.GEMINI_MODEL || "gemini-3.5-flash";
+  const compactSources = uniqueSourceLinks(sourceLinks).slice(0, 8);
   const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
     method: "POST",
     headers: {
@@ -25,10 +26,11 @@ export async function generateBriefWithGemini(
     },
     body: JSON.stringify({
       model,
-      input: buildPrompt(story, sourceLinks),
+      input: buildPrompt(story, compactSources),
       generation_config: {
         temperature: 0.45,
         thinking_level: "low",
+        max_output_tokens: 1800,
       },
       store: false,
     }),
@@ -69,7 +71,12 @@ export async function generateBriefWithGemini(
     verificationProtocol: normaliseList(parsed.verificationProtocol),
     narratives: normaliseList(parsed.narratives),
     whatHappensNext: normaliseList(parsed.whatHappensNext),
-    citedUrls: normaliseList(parsed.citedUrls).concat(sourceLinks.map((link) => link.url)).slice(0, 12),
+    audienceReachScore: normaliseScore(parsed.audienceReachScore, story.totalScore),
+    audienceReachReason: String(parsed.audienceReachReason || ""),
+    videoAngles: normaliseList(parsed.videoAngles),
+    sourcePositions: normaliseList(parsed.sourcePositions),
+    scoreRationale: normaliseScoreRationale(parsed.scoreRationale),
+    citedUrls: uniqueStrings(normaliseList(parsed.citedUrls).concat(compactSources.map((link) => link.url))).slice(0, 12),
     generatedBy: "gemini",
     generatedAt: new Date().toISOString(),
   };
@@ -82,7 +89,7 @@ function buildPrompt(story: StoredStory, sourceLinks: StorySourceLink[]) {
 
   return `You are Politily, an original political education and narrative research assistant for a creator in India.
 
-Create a fact-first, source-aware political brief for a newsroom research desk. Use an original Politily explainer voice: sharp hook, clear context, historical memory, multiple perspectives, and creator-ready structure. Do not imitate any living creator or YouTube channel.
+Create a concise, fact-first, source-aware political brief for a newsroom research desk. Use an original Politily explainer voice: sharp hook, clear context, historical memory, multiple perspectives, and creator-ready structure. Do not imitate any living creator or YouTube channel.
 
 Priority rules:
 1. Separate confirmed facts, reported claims, allegations, and political framing.
@@ -90,6 +97,8 @@ Priority rules:
 3. Use agencies and media as triangulation, not as final proof.
 4. If a story needs historical context, name the historical tensions and say exactly what still needs verification.
 5. If the source base is thin, say so clearly. Do not invent facts, dates, laws, people, numbers, or quotes.
+6. Keep all research fields in English. Write only videoScript and cta in Hindi using Devanagari script.
+7. Optimize for 12-15 daily briefs: avoid repetition and prioritize evidence, competing claims, and creator strategy.
 
 Story:
 Title: ${story.title}
@@ -123,8 +132,19 @@ Return only valid JSON with this exact shape:
   "verificationProtocol": ["step a researcher should do before publishing"],
   "narratives": ["major perspective or competing interpretation"],
   "whatHappensNext": ["watch item"],
-  "videoScript": "structured creator script with hook, context, history, evidence, multiple perspectives, what next, CTA",
-  "cta": "short call to action",
+  "audienceReachScore": 0,
+  "audienceReachReason": "why Indian audience may or may not care",
+  "videoAngles": ["one possible video angle"],
+  "sourcePositions": ["source name - what it claims or emphasizes - why it matters or its limitation"],
+  "scoreRationale": {
+    "noveltyScore": "why novelty score is high or low",
+    "politicalWeight": "why political weight matters",
+    "geopoliticalRelevance": "why geo relevance matters",
+    "viralPotential": "why it can or cannot travel online",
+    "audienceReach": "why this reaches Indian viewers"
+  },
+  "videoScript": "Hindi Devanagari structured creator script with hook, context, history, evidence, multiple perspectives, what next, CTA",
+  "cta": "short Hindi Devanagari call to action",
   "caution": "what not to overclaim",
   "citedUrls": ["url"]
 }`;
@@ -152,14 +172,15 @@ function parseBrief(text?: string): Omit<PolitilyBrief, "generatedBy" | "generat
 }
 
 function templateBrief(story: StoredStory, sourceLinks: StorySourceLink[]): PolitilyBrief {
-  const citedUrls = [story.url, ...sourceLinks.map((link) => link.url)].filter(Boolean).slice(0, 10);
+  const compactSources = uniqueSourceLinks(sourceLinks).slice(0, 8);
+  const citedUrls = uniqueStrings([story.url, ...compactSources.map((link) => link.url)].filter(Boolean)).slice(0, 10);
 
   return {
     briefTitle: story.title,
     hook: `This is not just another headline. The political question is who gains power, who loses leverage, and what changes next.`,
     whatHappened: story.summary || `A political signal was detected from ${story.sourceName}.`,
     whyItMatters:
-      "The story crossed Politily's scoring threshold, meaning it has a notable mix of novelty, political weight, wider relevance, and narrative potential.",
+      "This story has a notable mix of novelty, political weight, wider relevance, and narrative potential for an Indian audience.",
     historicalContext:
       "Add timeline research before publication: identify the law, institution, election cycle, party history, and earlier parallel events connected to this story.",
     geographicalContext:
@@ -209,9 +230,27 @@ function templateBrief(story: StoredStory, sourceLinks: StorySourceLink[]): Poli
       "Watch court, commission, ministry, or party updates.",
       "Compare national, regional, and international framing.",
     ],
+    audienceReachScore: story.totalScore,
+    audienceReachReason:
+      "Estimated from novelty, political weight, public relevance, source credibility, and whether the issue can be explained with a clear conflict or consequence.",
+    videoAngles: [
+      "What happened, what is verified, and what political claim still needs proof.",
+      "Who benefits politically if this narrative becomes popular.",
+      "What ordinary Indian viewers should watch next.",
+    ],
+    sourcePositions: compactSources.length
+      ? compactSources.map((link) => `${link.sourceName} - reports or links the signal "${link.title}" - verify against primary records.`)
+      : [`${story.sourceName} - first detected source - needs independent corroboration.`],
+    scoreRationale: {
+      noveltyScore: `Novelty is ${story.noveltyScore}/100 because Politily compares this signal against recent stored stories.`,
+      politicalWeight: `Political weight is ${story.politicalWeight}/100 based on institutions, parties, courts, policy, elections, and public-order terms.`,
+      geopoliticalRelevance: `Geopolitical relevance is ${story.geopoliticalRelevance}/100 based on foreign affairs, cross-border, diplomatic, or global reaction signals.`,
+      viralPotential: `Viral potential is ${story.viralPotential}/100 based on conflict, personalities, censorship, identity, rights, and shareable public stakes.`,
+      audienceReach: `Indian audience reach is estimated at ${story.totalScore}/100 from the combined story score.`,
+    },
     videoScript:
-      `Hook: ${story.title}\n\nContext: Explain what happened, who is involved, and why it matters now.\n\nHistorical background: Compare this with earlier political or institutional moments.\n\nEvidence: Put primary documents and direct statements before commentary.\n\nMultiple perspectives: Show the ruling side, opposition side, institutional view, and citizen impact.\n\nWhat next: End with the next event, decision, or document to watch.`,
-    cta: "Follow Politily for political stories with context, sources, and memory.",
+      `हुक: ${story.title}\n\nकॉन्टेक्स्ट: सबसे पहले साफ बताइए कि हुआ क्या, किस संस्था या व्यक्ति का नाम जुड़ रहा है, और यह मुद्दा अभी क्यों उठा है.\n\nइतिहास: इस कहानी को पुराने राजनीतिक, कानूनी या सामाजिक संदर्भ से जोड़िए, लेकिन बिना सबूत के कोई बड़ा दावा मत कीजिए.\n\nसबूत: पहले आधिकारिक दस्तावेज, कोर्ट रिकॉर्ड, सरकारी बयान या सीधा स्रोत दिखाइए. मीडिया रिपोर्ट को संकेत मानिए, अंतिम सच नहीं.\n\nअलग-अलग पक्ष: सरकार, विपक्ष, संस्था, प्रभावित लोगों और स्वतंत्र विशेषज्ञ के दृष्टिकोण को अलग-अलग रखिए.\n\nआगे क्या: दर्शक को बताइए कि अगला दस्तावेज, फैसला, बयान या चुनावी संकेत कौन सा देखना चाहिए.`,
+    cta: "अगर आप राजनीति को शोर नहीं, सबूत और संदर्भ से समझना चाहते हैं, तो Politily को फॉलो कीजिए.",
     caution:
       "Do not publish allegations as facts. Separate confirmed records, reported claims, and political spin.",
     citedUrls,
@@ -243,4 +282,52 @@ function normaliseEvidenceGrade(value: unknown): PolitilyBrief["evidenceGrade"] 
   return allowed.includes(value as PolitilyBrief["evidenceGrade"])
     ? (value as PolitilyBrief["evidenceGrade"])
     : "thin";
+}
+
+function normaliseScore(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
+function normaliseScoreRationale(value: unknown): PolitilyBrief["scoreRationale"] {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    noveltyScore: stringValue(record.noveltyScore),
+    politicalWeight: stringValue(record.politicalWeight),
+    geopoliticalRelevance: stringValue(record.geopoliticalRelevance),
+    viralPotential: stringValue(record.viralPotential),
+    audienceReach: stringValue(record.audienceReach),
+  };
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value : undefined;
+}
+
+function uniqueSourceLinks(sourceLinks: StorySourceLink[]) {
+  const seen = new Set<string>();
+  const unique: StorySourceLink[] = [];
+  for (const link of sourceLinks) {
+    const key = `${link.url}|${link.sourceName}`.toLowerCase();
+    if (!link.url || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    unique.push(link);
+  }
+
+  return unique;
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
 }

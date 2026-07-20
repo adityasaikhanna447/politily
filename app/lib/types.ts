@@ -108,6 +108,17 @@ export interface PolitilyBrief {
   verificationProtocol: string[];
   narratives: string[];
   whatHappensNext: string[];
+  audienceReachScore?: number;
+  audienceReachReason?: string;
+  videoAngles?: string[];
+  sourcePositions?: string[];
+  scoreRationale?: {
+    noveltyScore?: string;
+    politicalWeight?: string;
+    geopoliticalRelevance?: string;
+    viralPotential?: string;
+    audienceReach?: string;
+  };
   videoScript: string;
   cta: string;
   caution: string;

@@ -1,6 +1,6 @@
 import type { SignalSource } from "./types";
 
-function gdeltUrl(query: string, maxrecords = 20) {
+function gdeltUrl(query: string, maxrecords = 12) {
   const params = new URLSearchParams({
     query,
     mode: "artlist",
@@ -98,6 +98,54 @@ export const DEFAULT_SOURCES: SignalSource[] = [
     region: "india/states",
     category: "Regional context",
     priority: 90,
+    active: true,
+  },
+  {
+    id: "gdelt-election-watch-india",
+    name: "Election Strategy + Voter Mood",
+    type: "gdelt",
+    url: gdeltUrl(
+      'India (election OR campaign OR alliance OR manifesto OR voter OR EVM OR "Election Commission" OR constituency OR candidate OR "model code")'
+    ),
+    region: "india",
+    category: "Election watch",
+    priority: 95,
+    active: true,
+  },
+  {
+    id: "gdelt-parliament-policy-watch",
+    name: "Parliament, Bills, Policy Impact",
+    type: "gdelt",
+    url: gdeltUrl(
+      'India (Parliament OR "Lok Sabha" OR "Rajya Sabha" OR bill OR ordinance OR policy OR regulation OR committee OR "standing committee")'
+    ),
+    region: "india",
+    category: "Parliament and policy",
+    priority: 92,
+    active: true,
+  },
+  {
+    id: "gdelt-punjab-culture-censorship",
+    name: "Punjab, Culture, Film Ban Context",
+    type: "gdelt",
+    url: gdeltUrl(
+      'Punjab OR Sikh OR CBFC OR "film ban" OR censorship OR "public order" OR "Diljit" OR "Ghallughara" OR Satluj OR Khalistan OR diaspora'
+    ),
+    region: "india/punjab",
+    category: "Punjab and cultural politics",
+    priority: 90,
+    active: true,
+  },
+  {
+    id: "gdelt-national-newsrooms",
+    name: "National Newsroom Triangulation",
+    type: "gdelt",
+    url: gdeltUrl(
+      'India ("The Hindu" OR "Indian Express" OR "Hindustan Times" OR NDTV OR "Times of India" OR "Economic Times" OR "The Print" OR Scroll OR "The Wire" OR "India Today") politics'
+    ),
+    region: "india",
+    category: "National media triangulation",
+    priority: 88,
     active: true,
   },
   {

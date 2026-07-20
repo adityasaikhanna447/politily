@@ -23,6 +23,11 @@ const politicalTerms = [
   "chief minister",
   "lok sabha",
   "rajya sabha",
+  "censorship",
+  "public order",
+  "cbfc",
+  "rights",
+  "commission",
   "bjp",
   "congress",
   "aap",
@@ -77,6 +82,12 @@ const viralTerms = [
   "caste",
   "communal",
   "corruption",
+  "censorship",
+  "public order",
+  "film ban",
+  "takedown",
+  "misinformation",
+  "disinformation",
 ];
 
 export function fingerprintFor(signal: Pick<RawSignal, "title" | "url" | "sourceName">) {
@@ -154,9 +165,13 @@ function inferTags(text: string) {
     ["election", ["election", "vote", "poll", "campaign"]],
     ["governance", ["policy", "bill", "administration", "minister", "cabinet"]],
     ["courts", ["court", "supreme court", "high court", "constitution"]],
+    ["censorship", ["censorship", "ban", "cbfc", "film", "takedown", "free speech", "public order"]],
+    ["culture", ["film", "cinema", "documentary", "religion", "identity", "community"]],
+    ["states", ["punjab", "kashmir", "manipur", "assam", "bengal", "tamil nadu", "kerala", "maharashtra", "bihar", "uttar pradesh"]],
     ["geopolitics", geopoliticalTerms],
     ["party-politics", ["party", "coalition", "opposition", "defection", "alliance"]],
     ["public-order", ["protest", "violence", "clash", "security"]],
+    ["fact-check", ["misinformation", "disinformation", "fake", "hoax", "fact check"]],
   ];
 
   checks.forEach(([tag, terms]) => {
