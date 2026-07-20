@@ -35,6 +35,18 @@ const TOPIC_RULES: TopicRule[] = [
     summary: "Campaign moves, voter mood, alliances, candidate conflict, EC actions, and issues that can affect electoral narratives.",
   },
   {
+    id: "bypoll",
+    label: "Bypoll",
+    keywords: ["bypoll", "by-election", "byelection", "bankipur", "assembly seat", "candidate withdrawal"],
+    summary: "High-signal local contests, candidate switches, star campaigners, caste/social arithmetic, and party testing grounds.",
+  },
+  {
+    id: "youth-protest",
+    label: "Youth protest",
+    keywords: ["cjp", "cockroach janta party", "sansad chalo", "chalo sansad", "jantar mantar", "student protest", "paper leak", "neet"],
+    summary: "Student movements, protest escalation, police response, government dialogue, opposition framing, and youth anger.",
+  },
+  {
     id: "parliament",
     label: "Parliament",
     keywords: ["parliament", "lok sabha", "rajya sabha", "bill", "ordinance", "committee", "policy", "regulation"],
@@ -60,8 +72,8 @@ const TOPIC_RULES: TopicRule[] = [
   },
   {
     id: "party",
-    label: "Party",
-    keywords: ["bjp", "congress", "aap", "tmc", "dmk", "rjd", "jdu", "alliance", "opposition", "defection", "coalition"],
+    label: "Party/BJP",
+    keywords: ["bjp", "congress", "aap", "tmc", "dmk", "rjd", "jdu", "alliance", "opposition", "defection", "coalition", "star campaigner"],
     summary: "Party strategy, statements, alliances, defections, attack lines, and narrative competition.",
   },
   {

@@ -352,14 +352,15 @@ a {
 .kpi-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   margin-bottom: 14px;
 }
 
 .kpi-card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: 8px;
+  min-height: 96px;
   overflow: hidden;
   padding: 13px 14px;
   position: relative;
@@ -412,7 +413,7 @@ a {
 .panel {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 16px;
 }
 
@@ -506,13 +507,13 @@ a {
 .topic-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .topic-card {
   background: var(--card-2);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   color: var(--text);
   min-height: 158px;
   padding: 13px;
@@ -575,7 +576,7 @@ a {
 .strategy-row {
   background: var(--card-2);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 8px;
   padding: 10px 12px;
 }
 
@@ -631,7 +632,7 @@ a {
   align-items: flex-start;
   background: var(--card-2);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 8px;
   display: flex;
   gap: 12px;
   justify-content: space-between;
@@ -676,7 +677,7 @@ a {
   background: var(--card-2);
   border: 1px solid var(--line);
   border-left: 3px solid transparent;
-  border-radius: 11px;
+  border-radius: 8px;
   color: var(--text);
   padding: 13px;
   text-align: left;
@@ -781,7 +782,7 @@ a {
   align-items: center;
   background: #0d0d0d;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 8px;
   display: grid;
   justify-items: center;
   padding: 14px;
@@ -821,7 +822,7 @@ a {
 .score-card {
   background: var(--card-2);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   color: var(--text);
   padding: 12px;
   text-align: left;
@@ -851,7 +852,7 @@ a {
 .source-trail {
   background: #0f0f0f;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   margin-top: 12px;
   padding: 14px;
 }
@@ -871,7 +872,7 @@ a {
 .research-tile {
   background: var(--card-2);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 12px;
 }
 
@@ -919,7 +920,7 @@ a {
 .script-box {
   background: #0d0d0d;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   color: var(--text);
   font-size: 15px;
   line-height: 1.8;
@@ -960,7 +961,7 @@ a {
 
 .source-group {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   overflow: hidden;
 }
 
@@ -1073,6 +1074,13 @@ select:focus-visible {
     grid-template-columns: 1fr 1fr;
   }
 
+  .top-search,
+  .top-actions .btn,
+  .crawl-chip,
+  .score-chip {
+    min-height: 44px;
+  }
+
   .crawl-chip,
   .score-chip,
   .top-actions .btn {
@@ -1157,5 +1165,41 @@ select:focus-visible {
   .select-control,
   .brief-title-row .btn {
     width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .orm-topbar {
+    gap: 10px;
+  }
+
+  .brand-lockup strong {
+    font-size: 14px;
+  }
+
+  .top-actions {
+    gap: 8px;
+  }
+
+  .crawl-chip strong {
+    max-width: none;
+    white-space: normal;
+  }
+
+  .panel,
+  .story-post,
+  .topic-card,
+  .kpi-card {
+    padding: 12px;
+  }
+
+  .story-post h3 {
+    font-size: 16px;
+  }
+
+  .post-meta,
+  .post-footer {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

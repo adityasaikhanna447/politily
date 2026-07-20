@@ -49,12 +49,21 @@ function buildDocumentXml(story: StoredStory) {
     ["What happened", [brief?.whatHappened || story.summary || "No brief generated yet."]],
     ["Why this matters", [brief?.whyItMatters || "Generate a brief for political significance."]],
     ["Indian audience reach", [`${brief?.audienceReachScore ?? story.totalScore}/100`, brief?.audienceReachReason || "Reach is estimated from story score and political relevance."]],
+    ["Evidence grade", [brief?.evidenceGrade || "thin"]],
     ["Historical context", [brief?.historicalContext || "Generate a brief for historical context."]],
     ["Regional context", [brief?.regionalContext || brief?.geographicalContext || "Generate a brief for regional context."]],
     ["Source confidence", [brief?.sourceConfidence || "Source confidence not assessed yet."]],
+    ["Timeline", brief?.timeline?.length ? brief.timeline : ["No timeline generated yet."]],
+    ["Facts and figures", brief?.factsAndFigures?.length ? brief.factsAndFigures : ["No facts and figures generated yet."]],
     ["Video angles", brief?.videoAngles?.length ? brief.videoAngles : ["Generate a brief for video angles."]],
     ["Source positions", brief?.sourcePositions?.length ? brief.sourcePositions : ["No source positions generated yet."]],
     ["Claim matrix", brief?.claimMatrix?.length ? brief.claimMatrix : ["No claim matrix generated yet."]],
+    ["Primary documents to verify", brief?.primaryDocuments?.length ? brief.primaryDocuments : ["No primary document checklist generated yet."]],
+    ["Missing evidence", brief?.missingEvidence?.length ? brief.missingEvidence : ["No missing evidence list generated yet."]],
+    ["Verification protocol", brief?.verificationProtocol?.length ? brief.verificationProtocol : ["No verification protocol generated yet."]],
+    ["Narrative map", brief?.narratives?.length ? brief.narratives : ["No narrative map generated yet."]],
+    ["What happens next", brief?.whatHappensNext?.length ? brief.whatHappensNext : ["No watch items generated yet."]],
+    ["Score rationale", scoreRationaleItems(brief, story)],
     ["Hindi creator script", [brief?.videoScript || story.scriptText || "Generate a brief for the Hindi script."]],
     ["Caution", [brief?.caution || "Do not publish allegations as facts."]],
     ["Cited URLs", brief?.citedUrls?.length ? brief.citedUrls : [story.url]],
@@ -79,6 +88,16 @@ function buildDocumentXml(story: StoredStory) {
     <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="900" w:right="900" w:bottom="900" w:left="900"/></w:sectPr>
   </w:body>
 </w:document>`;
+}
+
+function scoreRationaleItems(brief: StoredStory["brief"], story: StoredStory) {
+  return [
+    brief?.scoreRationale?.noveltyScore || `Novelty: ${story.noveltyScore}/100`,
+    brief?.scoreRationale?.politicalWeight || `Political weight: ${story.politicalWeight}/100`,
+    brief?.scoreRationale?.geopoliticalRelevance || `Geopolitical relevance: ${story.geopoliticalRelevance}/100`,
+    brief?.scoreRationale?.viralPotential || `Viral potential: ${story.viralPotential}/100`,
+    brief?.scoreRationale?.audienceReach || `Indian audience reach: ${brief?.audienceReachScore ?? story.totalScore}/100`,
+  ];
 }
 
 function textParagraphs(value: string) {

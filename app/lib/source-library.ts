@@ -1,21 +1,97 @@
 import type { SignalSource } from "./types";
 
-function gdeltUrl(query: string, maxrecords = 12) {
+function gdeltUrl(query: string, maxrecords = 8, timespan = "7d") {
   const params = new URLSearchParams({
     query,
     mode: "artlist",
     format: "json",
     maxrecords: String(maxrecords),
     sort: "datedesc",
+    timespan,
   });
 
   return `https://api.gdeltproject.org/api/v2/doc/doc?${params.toString()}`;
+}
+
+function googleNewsRss(query: string) {
+  const params = new URLSearchParams({
+    q: query,
+    hl: "en-IN",
+    gl: "IN",
+    ceid: "IN:en",
+  });
+
+  return `https://news.google.com/rss/search?${params.toString()}`;
 }
 
 const indiaCoreTerms =
   'India OR Indian OR Delhi OR "Lok Sabha" OR "Rajya Sabha" OR parliament OR election OR BJP OR Congress OR AAP OR TMC OR DMK OR CPI OR "Samajwadi Party" OR "Shiv Sena" OR NCP';
 
 export const DEFAULT_SOURCES: SignalSource[] = [
+  {
+    id: "google-news-cjp-protest",
+    name: "CJP Protest / Sansad Chalo Watch",
+    type: "rss",
+    url: googleNewsRss(
+      '"CJP protest" OR "Cockroach Janta Party" OR "Chalo Sansad" OR "Sansad Chalo" OR "Sonam Wangchuk" OR "education minister resignation"'
+    ),
+    region: "india/delhi",
+    category: "Hot topic / youth protest",
+    priority: 100,
+    active: true,
+  },
+  {
+    id: "gdelt-cjp-protest",
+    name: "GDELT CJP Protest Monitor",
+    type: "gdelt",
+    url: gdeltUrl(
+      'India ("CJP protest" OR "Cockroach Janta Party" OR "Chalo Sansad" OR "Sansad Chalo" OR "Jantar Mantar" OR "Sonam Wangchuk")',
+      10,
+      "14d"
+    ),
+    region: "india",
+    category: "Hot topic / protest triangulation",
+    priority: 100,
+    active: true,
+  },
+  {
+    id: "google-news-bankipur-bypoll",
+    name: "Bankipur Bypoll / BJP Watch",
+    type: "rss",
+    url: googleNewsRss(
+      '"Bankipur bypoll" OR "Bankipur by-election" OR "Bankipur byelection" OR "Bankipur Assembly" BJP OR "Prashant Kishor" OR "Jan Suraaj"'
+    ),
+    region: "india/bihar",
+    category: "Hot topic / bypoll",
+    priority: 100,
+    active: true,
+  },
+  {
+    id: "gdelt-bankipur-bypoll",
+    name: "GDELT Bankipur Bypoll Monitor",
+    type: "gdelt",
+    url: gdeltUrl(
+      'Bankipur (bypoll OR "by-election" OR byelection OR "Assembly seat" OR BJP OR "Prashant Kishor" OR "Jan Suraaj" OR RJD)',
+      10,
+      "30d"
+    ),
+    region: "india/bihar",
+    category: "Hot topic / bypoll triangulation",
+    priority: 99,
+    active: true,
+  },
+  {
+    id: "google-news-bjp-national",
+    name: "BJP National Political News",
+    type: "rss",
+    url: googleNewsRss(
+      'BJP politics India parliament election protest court policy opposition'
+    ),
+    region: "india",
+    category: "Party statements and conflict",
+    priority: 96,
+    active: true,
+  },
   {
     id: "gdelt-india-war-room",
     name: "India Political War Room",

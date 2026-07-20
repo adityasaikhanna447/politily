@@ -1,7 +1,7 @@
 import { getDemoState } from "./demo-data";
 import { sendBriefEmail } from "./email";
 import { generateBriefWithGemini } from "./gemini";
-import { fingerprintFor, scoreSignal } from "./scoring";
+import { fingerprintFor, scoreSignal, titleSimilarity } from "./scoring";
 import {
   addStorySource,
   createRun,
@@ -66,9 +66,9 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
   try {
     const threshold = numberEnv(env.POLITILY_SCORE_THRESHOLD, 72);
     const maxBriefs = numberEnv(env.POLITILY_MAX_DEEP_BRIEFS_PER_RUN, 1);
-    const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 4), 4);
-    const fetchTimeoutMs = Math.min(numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 6000), 6000);
-    const scanDeadline = Date.now() + 24000;
+    const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 8), 12);
+    const fetchTimeoutMs = Math.min(numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 9000), 12000);
+    const scanDeadline = Date.now() + 42000;
     const sources = rotateSources(
       (await listSources(env.DB)).filter((source) => source.active)
     ).slice(0, Math.max(1, maxSources));
@@ -78,66 +78,82 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
     let createdCount = 0;
     let emailedCount = 0;
 
-    for (const source of sources) {
+    const fetchResults = await Promise.allSettled(
+      sources.map(async (source) => {
+        try {
+          return {
+            source,
+            signals: await fetchSignals(source, fetchTimeoutMs),
+          };
+        } catch (error) {
+          await updateSourceChecked(env.DB!, source.id);
+          throw new Error(`${source.name}: ${errorMessage(error)}`);
+        }
+      })
+    );
+
+    for (const result of fetchResults) {
       if (Date.now() > scanDeadline) {
-        errors.push("Scan budget reached. Remaining sources will continue in the next cron run.");
+        errors.push("Scan budget reached. Remaining fetched signals will continue in the next run.");
         break;
       }
 
-      try {
-        const signals = await fetchSignals(source, fetchTimeoutMs);
-        scannedCount += signals.length;
-        await updateSourceChecked(env.DB, source.id);
+      if (result.status === "rejected") {
+        errors.push(errorMessage(result.reason));
+        continue;
+      }
 
-        for (const signal of signals) {
-          const fingerprint = fingerprintFor(signal);
-          const existing = await getStoryByFingerprint(env.DB, fingerprint);
-          if (existing) {
-            await addStorySource(env.DB, {
-              storyId: existing.id,
-              title: signal.title,
-              url: signal.url,
-              sourceName: signal.sourceName,
-              publishedAt: signal.publishedAt ?? null,
-            });
-            continue;
-          }
+      const { source, signals } = result.value;
+      scannedCount += signals.length;
+      await updateSourceChecked(env.DB, source.id);
 
-          const scores = scoreSignal(signal, recentStories);
-          const story: StoredStory = {
-            id: newId("story"),
-            fingerprint,
+      for (const signal of signals) {
+        const fingerprint = fingerprintFor(signal);
+        const existing = await getStoryByFingerprint(env.DB, fingerprint);
+        const related = existing ?? findRelatedStory(signal, recentStories);
+
+        if (related) {
+          await addStorySource(env.DB, {
+            storyId: related.id,
             title: signal.title,
-            summary: signal.summary,
             url: signal.url,
             sourceName: signal.sourceName,
-            sourceType: signal.sourceType,
-            sourceCountry: signal.sourceCountry ?? "",
-            language: signal.language ?? "",
             publishedAt: signal.publishedAt ?? null,
-            detectedAt: new Date().toISOString(),
-            status: scores.totalScore >= threshold ? "triggered" : "watching",
-            ...scores,
-          };
-
-          await insertStory(env.DB, story);
-          await addStorySource(env.DB, {
-            storyId: story.id,
-            title: story.title,
-            url: story.url,
-            sourceName: story.sourceName,
-            publishedAt: story.publishedAt,
           });
-          recentStories.unshift(story);
-          createdCount += 1;
-
-          if (story.status === "triggered") {
-            triggeredStories.push(story);
-          }
+          continue;
         }
-      } catch (error) {
-        errors.push(`${source.name}: ${errorMessage(error)}`);
-        await updateSourceChecked(env.DB, source.id);
+
+        const scores = scoreSignal(signal, recentStories);
+        const story: StoredStory = {
+          id: newId("story"),
+          fingerprint,
+          title: signal.title,
+          summary: signal.summary,
+          url: signal.url,
+          sourceName: signal.sourceName,
+          sourceType: signal.sourceType,
+          sourceCountry: signal.sourceCountry ?? "",
+          language: signal.language ?? "",
+          publishedAt: signal.publishedAt ?? null,
+          detectedAt: new Date().toISOString(),
+          status: scores.totalScore >= threshold ? "triggered" : "watching",
+          ...scores,
+        };
+
+        await insertStory(env.DB, story);
+        await addStorySource(env.DB, {
+          storyId: story.id,
+          title: story.title,
+          url: story.url,
+          sourceName: story.sourceName,
+          publishedAt: story.publishedAt,
+        });
+        recentStories.unshift(story);
+        createdCount += 1;
+
+        if (story.status === "triggered") {
+          triggeredStories.push(story);
+        }
       }
     }
 
@@ -238,6 +254,12 @@ async function fetchSignals(source: SignalSource, timeoutMs: number): Promise<Ra
 
 function rotateSources(sources: SignalSource[]) {
   return [...sources].sort((a, b) => {
+    const aHot = a.category.toLowerCase().includes("hot topic") ? 1 : 0;
+    const bHot = b.category.toLowerCase().includes("hot topic") ? 1 : 0;
+    if (aHot !== bHot) {
+      return bHot - aHot;
+    }
+
     const aChecked = a.lastCheckedAt ? Date.parse(a.lastCheckedAt) : 0;
     const bChecked = b.lastCheckedAt ? Date.parse(b.lastCheckedAt) : 0;
     if (aChecked !== bChecked) {
@@ -283,6 +305,7 @@ function parseFeed(xml: string, source: SignalSource): RawSignal[] {
       const title = clean(extractTag(entry, "title"));
       const summary = clean(extractTag(entry, "description") || extractTag(entry, "summary"));
       const link = clean(extractTag(entry, "link")) || extractHref(entry);
+      const sourceName = clean(extractTag(entry, "source")) || source.name;
       const publishedAt = parseDate(
         extractTag(entry, "pubDate") || extractTag(entry, "published") || extractTag(entry, "updated")
       );
@@ -291,7 +314,7 @@ function parseFeed(xml: string, source: SignalSource): RawSignal[] {
         title,
         summary,
         url: link,
-        sourceName: source.name,
+        sourceName,
         sourceType: source.type,
         sourceCountry: source.region,
         language: "",
@@ -302,6 +325,27 @@ function parseFeed(xml: string, source: SignalSource): RawSignal[] {
     })
     .filter((signal) => isUsableSignal(signal.title, signal.summary, signal.language) && !isNoiseSignal(signal.title, signal.summary))
     .slice(0, 12);
+}
+
+function findRelatedStory(signal: RawSignal, recentStories: StoredStory[]) {
+  const titleTokens = signal.title.split(/\s+/).filter((word) => word.length > 3);
+  if (titleTokens.length < 4) {
+    return null;
+  }
+
+  let best: { story: StoredStory; similarity: number } | null = null;
+  for (const story of recentStories.slice(0, 100)) {
+    const similarity = titleSimilarity(signal.title, story.title);
+    if (!best || similarity > best.similarity) {
+      best = { story, similarity };
+    }
+  }
+
+  if (best && best.similarity >= 0.72) {
+    return best.story;
+  }
+
+  return null;
 }
 
 function extractTag(value: string, tag: string) {
