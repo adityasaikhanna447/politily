@@ -128,7 +128,7 @@ const MIN_VISIBLE_STORY_LABEL = "20 Jul 2026";
 export function PolitilyDashboard() {
   const [state, setState] = useState<DashboardState | null>(null);
   const [selectedId, setSelectedId] = useState("");
-  const [view, setView] = useState<View>("overview");
+  const [view, setView] = useState<View>("watch");
   const [status, setStatus] = useState("Connecting to Politily");
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
@@ -274,13 +274,13 @@ export function PolitilyDashboard() {
       </header>
 
       <aside className="orm-sidebar">
-        <div className="nav-label">Analytics</div>
-        <NavItem active={view === "overview"} label="Overview" onClick={() => setView("overview")} />
-        <NavItem active={view === "watch"} label="Priority queue" onClick={() => setView("watch")} badge={filteredStories.length} />
+        <div className="nav-label">Desk</div>
+        <NavItem active={view === "watch"} label="Issue radar" onClick={() => setView("watch")} badge={filteredStories.length} />
+        <NavItem active={view === "overview"} label="Snapshot" onClick={() => setView("overview")} />
         <NavItem active={view === "brief"} label="Brief + script" onClick={() => setView("brief")} />
         <div className="nav-label">Research</div>
-        <NavItem active={view === "sources"} label="Source library" onClick={() => setView("sources")} />
-        <NavItem active={view === "setup"} label="Setup status" onClick={() => setView("setup")} />
+        <NavItem active={view === "sources"} label="Sources" onClick={() => setView("sources")} />
+        <NavItem active={view === "setup"} label="Setup" onClick={() => setView("setup")} />
 
         <div className="sidebar-block">
           <div className="nav-label">Topic filters</div>
@@ -324,14 +324,16 @@ export function PolitilyDashboard() {
           <strong>{formatTokens(tokenTotal)} tokens</strong>
         </div>
 
-        <section className="kpi-grid">
-          <Kpi tone="gold" label="Signals" value={enrichedStories.length} sub="stored stories" />
-          <Kpi tone="orange" label="Triggered" value={triggeredCount} sub={`threshold ${state?.config.threshold ?? 72}`} />
-          <Kpi tone="green" label="Briefs" value={briefedCount} sub="generated" />
-          <Kpi tone="blue" label="Portals" value={portalNames.length} sub={`visible since ${MIN_VISIBLE_STORY_LABEL}`} />
-          <Kpi tone="purple" label="Gemini tokens" value={formatTokens(tokenTotal)} sub="brief generation only" />
-          <Kpi tone="red" label="Email" value={state?.config.emailReady ? "Ready" : "Pending"} sub="Resend domain" />
-        </section>
+        {view === "overview" ? (
+          <section className="kpi-grid">
+            <Kpi tone="gold" label="Signals" value={enrichedStories.length} sub="stored stories" />
+            <Kpi tone="orange" label="Triggered" value={triggeredCount} sub={`threshold ${state?.config.threshold ?? 72}`} />
+            <Kpi tone="green" label="Briefs" value={briefedCount} sub="generated" />
+            <Kpi tone="blue" label="Portals" value={portalNames.length} sub={`visible since ${MIN_VISIBLE_STORY_LABEL}`} />
+            <Kpi tone="purple" label="Gemini tokens" value={formatTokens(tokenTotal)} sub="brief generation only" />
+            <Kpi tone="red" label="Email" value={state?.config.emailReady ? "Ready" : "Pending"} sub="Resend domain" />
+          </section>
+        ) : null}
 
         {view === "overview" ? (
           <OverviewDesk
@@ -355,6 +357,7 @@ export function PolitilyDashboard() {
             onSelect={setSelectedId}
             scoreFocus={scoreFocus}
             selectedStory={selectedStory}
+            selectedTopic={selectedTopic}
             setSelectedTopic={setSelectedTopic}
             setSortKey={setSortKey}
             sortKey={sortKey}
@@ -413,12 +416,18 @@ function SelectedStoryFooter({
   onGenerate: (storyId: string) => void;
   onOpenBrief: () => void;
 }) {
+  const sourcePreview = story.sourceNames.slice(0, 2).join(", ");
+  const extraSources = Math.max(0, story.sourceNames.length - 2);
+
   return (
     <footer className="selected-story-footer">
       <div className="selected-story-copy">
-        <span>Brief target</span>
+        <span>Selected issue</span>
         <strong>{story.title}</strong>
-        <small>{story.sourceName} - {story.reachScore}/100 - {briefTokenLabel(story.brief)}</small>
+        <small>
+          {story.topics[0]?.label || "Politics"} - {story.reachScore}/100 reach - {sourcePreview}
+          {extraSources ? ` +${extraSources}` : ""} - {briefTokenLabel(story.brief)}
+        </small>
       </div>
       <div className="selected-story-actions">
         <button className="btn btn-gold" disabled={busy} onClick={() => onGenerate(story.id)} type="button">
@@ -560,6 +569,7 @@ function OverviewDesk({
 function WatchDesk({
   stories,
   selectedStory,
+  selectedTopic,
   sortKey,
   setSortKey,
   setSelectedTopic,
@@ -571,6 +581,7 @@ function WatchDesk({
 }: {
   stories: EnrichedStory[];
   selectedStory?: EnrichedStory;
+  selectedTopic: string;
   sortKey: SortKey;
   setSortKey: (value: SortKey) => void;
   setSelectedTopic: (value: string) => void;
@@ -589,7 +600,7 @@ function WatchDesk({
     <div className="watch-grid">
       <section className="panel feed-panel">
         <div className="feed-tools">
-          <PanelTitle title="Priority queue" />
+          <PanelTitle title="Issue radar" />
           <select className="select-control" onChange={(event) => setSortKey(event.target.value as SortKey)} value={sortKey}>
             <option value="rank">Rank: highest score</option>
             <option value="recent">Recent first</option>
@@ -600,9 +611,9 @@ function WatchDesk({
           </select>
         </div>
         <div className="pill-row">
-          <button className="pill" onClick={() => setSelectedTopic("all")} type="button">All</button>
+          <button className={`pill ${selectedTopic === "all" ? "active" : ""}`} onClick={() => setSelectedTopic("all")} type="button">All</button>
           {TOPIC_RULES.map((topic) => (
-            <button className="pill" key={topic.id} onClick={() => setSelectedTopic(topic.id)} type="button">
+            <button className={`pill ${selectedTopic === topic.id ? "active" : ""}`} key={topic.id} onClick={() => setSelectedTopic(topic.id)} type="button">
               {topic.label}
             </button>
           ))}
@@ -648,30 +659,80 @@ function IssueClusterCard({
   onSelect: (id: string) => void;
 }) {
   const lead = cluster.lead;
+  const sourcePreview = cluster.sources.slice(0, 4);
+  const evidence = issueEvidenceLabel(lead, cluster.sources.length);
+  const briefState = briefStateLabel(lead);
 
   return (
     <button className={`story-post issue-card ${active ? "active" : ""}`} onClick={() => onSelect(lead.id)} type="button">
-      {lead.imageUrl ? <StoryImage story={lead} variant="thumb" /> : null}
-      <div className="story-post-body">
-        <div className="post-source-row">
+      <div className="issue-card-top">
+        <div className="issue-card-labels">
           <span className="source-pill">{cluster.topic.label}</span>
           <span>{formatRelativeDate(cluster.latestAt)}</span>
         </div>
+        <strong className="issue-score-badge">
+          {cluster.reachScore}
+          <span>/100</span>
+        </strong>
+      </div>
+      {lead.imageUrl ? <StoryImage story={lead} variant="thumb" /> : null}
+      <div className="story-post-body">
         <h3>{cluster.label}</h3>
         <p>{lead.newsSnippet}</p>
         <div className="issue-source-strip">
-          {cluster.sources.slice(0, 5).map((source) => (
+          {sourcePreview.map((source) => (
             <span key={source}>{source}</span>
           ))}
-          {cluster.sources.length > 5 ? <strong>+{cluster.sources.length - 5}</strong> : null}
+          {cluster.sources.length > sourcePreview.length ? <strong>+{cluster.sources.length - sourcePreview.length}</strong> : null}
+        </div>
+        <div className="issue-micro-grid">
+          <span className="issue-micro">
+            <b>{lead.viralPotential}</b>
+            <small>Viral</small>
+          </span>
+          <span className="issue-micro">
+            <b>{lead.politicalWeight}</b>
+            <small>Political</small>
+          </span>
+          <span className="issue-micro">
+            <b>{cluster.sources.length}</b>
+            <small>Sources</small>
+          </span>
+          <span className="issue-micro">
+            <b>{cluster.stories.length}</b>
+            <small>Reports</small>
+          </span>
         </div>
         <div className="post-signal-line">
-          <strong>{cluster.sources.length} source{cluster.sources.length === 1 ? "" : "s"}</strong>
-          <span>{cluster.stories.length} report{cluster.stories.length === 1 ? "" : "s"} / {cluster.reachScore}/100 reach</span>
+          <strong>{evidence}</strong>
+          <span>{briefState} - tap to inspect source proof</span>
         </div>
       </div>
     </button>
   );
+}
+
+function issueEvidenceLabel(story: EnrichedStory, sourceCount: number) {
+  if (story.brief?.evidenceGrade === "primary-backed") {
+    return "Primary-backed";
+  }
+  if (sourceCount >= 4) {
+    return "Multi-source";
+  }
+  if (sourceCount >= 2) {
+    return "Reported";
+  }
+  return "Thin trail";
+}
+
+function briefStateLabel(story: EnrichedStory) {
+  if (!story.brief) {
+    return "Brief pending";
+  }
+  if (story.brief.generatedBy === "template") {
+    return "Draft needs retry";
+  }
+  return "Brief ready";
 }
 
 function StoryImage({ story, variant = "thumb" }: { story: EnrichedStory; variant?: "hero" | "thumb" | "mini" | "dossier" }) {
