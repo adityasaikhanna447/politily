@@ -20,12 +20,17 @@ interface SourceContext {
   excerpt: string;
 }
 
+interface GeminiAttempt {
+  model: string;
+  maxOutputTokens: number;
+}
+
 export async function generateBriefWithGemini(
   env: RuntimeEnv,
   story: StoredStory,
   sourceLinks: StorySourceLink[]
 ): Promise<PolitilyBrief> {
-  const compactSources = uniqueSourceLinks(sourceLinks).slice(0, 8);
+  const compactSources = uniqueSourceLinks(sourceLinks).slice(0, 10);
   const sourceContexts = await fetchSourceContexts(story, compactSources);
 
   if (!env.GEMINI_API_KEY) {
@@ -33,50 +38,78 @@ export async function generateBriefWithGemini(
   }
 
   const model = env.GEMINI_MODEL || "gemini-3.5-flash";
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-    {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": env.GEMINI_API_KEY,
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: buildPrompt(story, compactSources, sourceContexts) }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.35,
-        maxOutputTokens: 2400,
-        responseMimeType: "application/json",
-      },
-    }),
+  const prompt = buildPrompt(story, compactSources, sourceContexts);
+  let lastFailure = "";
+
+  for (const [index, attempt] of geminiAttempts(model).entries()) {
+    if (index > 0) {
+      await delay(450 + index * 650);
     }
-  );
 
-  if (!response.ok) {
-    return {
-      ...templateBrief(story, sourceLinks, sourceContexts),
-      sourceConfidence: `Gemini request failed with HTTP ${response.status}. Template brief generated instead.`,
-    };
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(attempt.model)}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": env.GEMINI_API_KEY,
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: "user",
+                parts: [{ text: prompt }],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.28,
+              maxOutputTokens: attempt.maxOutputTokens,
+              responseMimeType: "application/json",
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        lastFailure = `HTTP ${response.status}${await shortErrorBody(response)}`;
+        if (!isRetryableStatus(response.status)) {
+          break;
+        }
+        continue;
+      }
+
+      const payload = (await response.json()) as GeminiGenerateContentResponse;
+      const text = payload.candidates
+        ?.flatMap((candidate) => candidate.content?.parts ?? [])
+        .map((part) => part.text ?? "")
+        .join("");
+      const parsed = parseBrief(text);
+      if (!parsed) {
+        lastFailure = "Gemini returned non-JSON output";
+        continue;
+      }
+
+      return normaliseGeminiBrief(parsed, story, compactSources, sourceContexts, payload, attempt.model);
+    } catch (error) {
+      lastFailure = error instanceof Error ? error.message : "Gemini request failed";
+    }
   }
 
-  const payload = (await response.json()) as GeminiGenerateContentResponse;
-  const text = payload.candidates
-    ?.flatMap((candidate) => candidate.content?.parts ?? [])
-    .map((part) => part.text ?? "")
-    .join("");
-  const parsed = parseBrief(text);
-  if (!parsed) {
-    return {
-      ...templateBrief(story, sourceLinks, sourceContexts),
-      sourceConfidence: "Gemini response could not be parsed. Template brief generated instead.",
-    };
-  }
+  return {
+    ...templateBrief(story, sourceLinks, sourceContexts),
+    sourceConfidence: `Gemini unavailable after retry path (${lastFailure || "unknown error"}). This is a template research draft, not the final deep brief. Retry brief generation in 1-2 minutes.`,
+  };
+}
 
+function normaliseGeminiBrief(
+  parsed: Omit<PolitilyBrief, "generatedBy" | "generatedAt">,
+  story: StoredStory,
+  compactSources: StorySourceLink[],
+  sourceContexts: SourceContext[],
+  payload: GeminiGenerateContentResponse,
+  model: string
+): PolitilyBrief {
   return {
     ...parsed,
     keyPeople: normaliseList(parsed.keyPeople),
@@ -99,7 +132,7 @@ export async function generateBriefWithGemini(
       normaliseList(parsed.citedUrls)
         .concat(compactSources.map((link) => link.url))
         .concat(sourceContexts.map((context) => context.url))
-    ).slice(0, 12),
+    ).slice(0, 14),
     tokenUsage: {
       promptTokens: normaliseOptionalNumber(payload.usageMetadata?.promptTokenCount),
       outputTokens: normaliseOptionalNumber(payload.usageMetadata?.candidatesTokenCount),
@@ -116,6 +149,7 @@ function buildPrompt(
   sourceLinks: StorySourceLink[],
   sourceContexts: SourceContext[]
 ) {
+  const issueFrame = inferIssueFrame(story, sourceLinks);
   const sources = sourceLinks
     .map((link, index) => `${index + 1}. ${link.sourceName}: ${link.title} - ${link.url}`)
     .join("\n");
@@ -128,7 +162,7 @@ function buildPrompt(
 
   return `You are Politily, an original political education and narrative research assistant for a creator in India.
 
-Create a concise, fact-first, source-aware political brief for a newsroom research desk. The output must help a political creator decide whether this is worth a video today. Use an original Politily explainer voice: sharp hook, clear context, historical memory, multiple perspectives, and creator-ready structure. Do not imitate any living creator or YouTube channel.
+Create a fact-first issue dossier for a newsroom research desk. This is not a newspaper summary. The output must help a political creator decide whether this issue deserves a video today. Use an original Politily explainer voice: sharp hook, clear context, historical memory, multiple perspectives, and creator-ready structure. Do not imitate any living creator or YouTube channel.
 
 Priority rules:
 1. Separate confirmed facts, reported claims, allegations, and political framing.
@@ -140,6 +174,15 @@ Priority rules:
 7. Optimize for 12-15 daily briefs: avoid repetition and prioritize evidence, competing claims, Indian audience reach, and creator strategy.
 8. Every headline and research field must be in English, even if an original source is in another Indian language.
 9. Avoid generic filler like "identify the law" or "verify the source" unless you also name the specific document, institution, party, person, or missing fact.
+10. Brief the whole issue cluster, not only the primary URL. If 4+ unique sources point to the same issue, synthesize their angles and state whether this is a viral candidate.
+11. Source positions must say what each source emphasizes, not repeat "reports the signal".
+
+Issue package:
+Issue: ${issueFrame.label}
+Likely topic: ${issueFrame.topic}
+Unique sources: ${issueFrame.sourceCount}
+Source mix: ${issueFrame.sourceMix}
+Briefing objective: ${issueFrame.objective}
 
 Story:
 Title: ${story.title}
@@ -162,7 +205,7 @@ Return only valid JSON with this exact shape:
 {
   "briefTitle": "short title",
   "hook": "one strong opening line that names the core political tension",
-  "whatHappened": "plain-language event summary with the specific bill, protest, party move, court action, or policy event",
+  "whatHappened": "plain-language issue summary, combining all related source headlines/excerpts into one event narrative",
   "whyItMatters": "political significance for governance, elections, party strategy, rights, public order, or youth/public mood",
   "historicalContext": "specific background and parallels; if unknown, name the exact missing record instead of writing generic advice",
   "geographicalContext": "places, institutions, regions, constituencies, or international context",
@@ -180,7 +223,7 @@ Return only valid JSON with this exact shape:
   "whatHappensNext": ["watch item"],
   "audienceReachScore": 0,
   "audienceReachReason": "why Indian audience may or may not care",
-  "videoAngles": ["specific video angle with hook and audience promise"],
+  "videoAngles": ["specific video angle with hook, audience promise, and why this can/cannot go viral"],
   "sourcePositions": ["source name - what it claims or emphasizes - why it matters or its limitation"],
   "scoreRationale": {
     "noveltyScore": "why novelty score is high or low",
@@ -215,6 +258,99 @@ function parseBrief(text?: string): Omit<PolitilyBrief, "generatedBy" | "generat
       return null;
     }
   }
+}
+
+function geminiAttempts(primaryModel: string): GeminiAttempt[] {
+  const models = uniqueStrings([primaryModel, "gemini-3.5-flash", "gemini-3.1-flash-lite"]);
+  const attempts: GeminiAttempt[] = [
+    { model: models[0], maxOutputTokens: 3000 },
+    { model: models[0], maxOutputTokens: 2200 },
+  ];
+  if (models[1]) {
+    attempts.push({ model: models[1], maxOutputTokens: 2200 });
+  }
+  if (models[2]) {
+    attempts.push({ model: models[2], maxOutputTokens: 1800 });
+  }
+
+  return attempts;
+}
+
+function isRetryableStatus(status: number) {
+  return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+}
+
+async function shortErrorBody(response: Response) {
+  try {
+    const text = await response.text();
+    const cleaned = cleanText(text).slice(0, 140);
+    return cleaned ? ` - ${cleaned}` : "";
+  } catch {
+    return "";
+  }
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function inferIssueFrame(story: StoredStory, sourceLinks: StorySourceLink[]) {
+  const text = `${story.title} ${story.summary} ${story.tags.join(" ")}`.toLowerCase();
+  const sources = uniqueStrings([story.sourceName, ...sourceLinks.map((link) => link.sourceName)]);
+  const sourceMix = sources.slice(0, 8).join(", ") || story.sourceName || "unknown";
+
+  if (hasAny(text, ["cjp", "cockroach janta party", "sansad chalo", "chalo sansad", "student protest", "paper leak", "neet"])) {
+    return {
+      label: "CJP / Sansad Chalo youth protest",
+      topic: "Youth protest, education accountability, public order, and Parliament-facing pressure",
+      sourceCount: sources.length,
+      sourceMix,
+      objective:
+        "Build one creator-ready issue brief: what happened, what is confirmed, who is mobilising, police/government response, student demands, opposition amplification, and viral risk.",
+    };
+  }
+
+  if (hasAny(text, ["bankipur", "bypoll", "by-election", "byelection", "jan suraaj", "prashant kishor"])) {
+    return {
+      label: "Bankipur bypoll and Bihar party strategy",
+      topic: "Bypoll, BJP prestige seat, Jan Suraaj/PK challenge, RJD/opposition math, Bihar voter mood",
+      sourceCount: sources.length,
+      sourceMix,
+      objective:
+        "Build one creator-ready issue brief: why this local seat matters, what each party is trying to signal, candidate/defection story, constituency history to verify, and video virality angle.",
+    };
+  }
+
+  if (hasAny(text, ["ban", "censorship", "cbfc", "film", "documentary", "public order", "takedown"])) {
+    return {
+      label: "Culture, censorship, and public-order politics",
+      topic: "Film/culture controversy, state power, speech, identity, and propaganda/censorship claims",
+      sourceCount: sources.length,
+      sourceMix,
+      objective:
+        "Build one creator-ready issue brief: legal basis, historical/regional context, public-order claim, speech/censorship claim, affected groups, and what would prove propaganda versus verified harm.",
+    };
+  }
+
+  if (hasAny(text, ["bill", "parliament", "lok sabha", "rajya sabha", "ordinance", "committee", "regulation"])) {
+    return {
+      label: "Parliament and policy impact",
+      topic: "Legislation, policy, governance, rights, industry impact, and opposition framing",
+      sourceCount: sources.length,
+      sourceMix,
+      objective:
+        "Build one creator-ready issue brief: what the bill/order changes, who benefits, who objects, primary document checklist, and the strongest public-interest hook.",
+    };
+  }
+
+  return {
+    label: cleanTitle(story.title),
+    topic: story.tags.length ? story.tags.join(", ") : "Indian politics",
+    sourceCount: sources.length,
+    sourceMix,
+    objective:
+      "Build one creator-ready issue brief: core event, evidence status, competing claims, political relevance, and whether it deserves a video today.",
+  };
 }
 
 async function fetchSourceContexts(story: StoredStory, sourceLinks: StorySourceLink[]) {
@@ -290,10 +426,21 @@ function htmlToText(html: string) {
 }
 
 function cleanText(value: string) {
-  return decodeEntities(value)
+  return decodeEntities(decodeEntities(value))
+    .replace(/&nbsp;|&amp;nbsp;/gi, " ")
     .replace(/\s+/g, " ")
     .replace(/\bAdvertisement\b/gi, " ")
     .trim();
+}
+
+function cleanTitle(value: string) {
+  return cleanText(value)
+    .replace(/\s+-\s+[^-]{2,40}$/g, "")
+    .slice(0, 120);
+}
+
+function hasAny(text: string, terms: string[]) {
+  return terms.some((term) => text.includes(term));
 }
 
 function templateBrief(
@@ -371,7 +518,7 @@ function templateBrief(
       inferredTopic.audienceReachReason,
     videoAngles: inferredTopic.videoAngles,
     sourcePositions: compactSources.length
-      ? compactSources.map((link) => `${link.sourceName} - reports or links the signal "${link.title}" - verify against primary records.`)
+      ? compactSources.map((link) => `${link.sourceName} - emphasizes: ${cleanTitle(link.title)}. Use as a triangulation point, then verify against primary records.`)
       : [`${story.sourceName} - first detected source - needs independent corroboration.`],
     scoreRationale: {
       noveltyScore: `Novelty is ${story.noveltyScore}/100 because Politily compares this signal against recent stored stories.`,

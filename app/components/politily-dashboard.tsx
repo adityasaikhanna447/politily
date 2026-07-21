@@ -188,7 +188,7 @@ export function PolitilyDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storyId }),
       });
-      const payload = (await response.json()) as { state?: DashboardState; error?: string };
+      const payload = (await response.json()) as { state?: DashboardState; story?: StoredStory; error?: string };
       if (!response.ok || !payload.state) {
         throw new Error(payload.error || `HTTP ${response.status}`);
       }
@@ -196,7 +196,7 @@ export function PolitilyDashboard() {
       setState(payload.state);
       setSelectedId(storyId);
       setView("brief");
-      setStatus("Brief ready");
+      setStatus(payload.story?.brief?.generatedBy === "template" ? "Gemini fallback draft saved. Retry this brief in 1-2 minutes." : "Brief ready");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Brief generation failed");
     } finally {
@@ -667,7 +667,7 @@ function IssueClusterCard({
         </div>
         <div className="post-signal-line">
           <strong>{cluster.sources.length} source{cluster.sources.length === 1 ? "" : "s"}</strong>
-          <span>{cluster.stories.length} report{cluster.stories.length === 1 ? "" : "s"} · {cluster.reachScore}/100 reach</span>
+          <span>{cluster.stories.length} report{cluster.stories.length === 1 ? "" : "s"} / {cluster.reachScore}/100 reach</span>
         </div>
       </div>
     </button>
@@ -816,6 +816,12 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
             Export DOCX
           </a>
         </div>
+        {brief.generatedBy === "template" ? (
+          <div className="fallback-warning">
+            <strong>Gemini did not complete this deep brief.</strong>
+            <span>This is a structured research draft with 0 returned Gemini tokens. Retry the brief before using it for a hot viral video.</span>
+          </div>
+        ) : null}
         <div className="insight-grid">
           <ResearchTile label="Audience reach" value={`${brief.audienceReachScore ?? story.reachScore}/100 - ${brief.audienceReachReason || story.reachReason}`} />
           <ResearchTile label="Evidence grade" value={brief.evidenceGrade} />
@@ -1267,7 +1273,7 @@ function briefTokenLabel(brief: StoredStory["brief"]) {
   }
 
   if (brief.generatedBy === "template") {
-    return "0 tokens - template";
+    return "0 tokens - retry Gemini";
   }
 
   const total = brief.tokenUsage?.totalTokens;

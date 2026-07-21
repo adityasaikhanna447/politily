@@ -1085,6 +1085,29 @@ a {
   margin-top: 10px;
 }
 
+.fallback-warning {
+  background: rgba(214, 69, 53, 0.12);
+  border: 1px solid rgba(214, 69, 53, 0.55);
+  border-radius: 12px;
+  color: var(--text);
+  display: grid;
+  gap: 6px;
+  margin: 18px 0;
+  padding: 14px 16px;
+}
+
+.fallback-warning strong {
+  color: #ffd0c9;
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.fallback-warning span {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 .snippet-copy {
   border-left: 3px solid var(--blue);
   color: var(--surface) !important;

@@ -46,6 +46,7 @@ export function docxFileName(story: StoredStory) {
 function buildDocumentXml(story: StoredStory) {
   const brief = story.brief;
   const sections: Array<[string, string[]]> = [
+    ["Generation status", [generationStatus(brief)]],
     ["What happened", [brief?.whatHappened || story.summary || "No brief generated yet."]],
     ["Why this matters", [brief?.whyItMatters || "Generate a brief for political significance."]],
     ["Indian audience reach", [`${brief?.audienceReachScore ?? story.totalScore}/100`, brief?.audienceReachReason || "Reach is estimated from story score and political relevance."]],
@@ -88,6 +89,20 @@ function buildDocumentXml(story: StoredStory) {
     <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="900" w:right="900" w:bottom="900" w:left="900"/></w:sectPr>
   </w:body>
 </w:document>`;
+}
+
+function generationStatus(brief: StoredStory["brief"]) {
+  if (!brief) {
+    return "No generated brief yet.";
+  }
+
+  const tokens = brief.tokenUsage?.totalTokens;
+  const tokenText = typeof tokens === "number" ? `${tokens} Gemini tokens reported` : "Gemini token usage not reported";
+  if (brief.generatedBy === "template") {
+    return `Template fallback draft. Gemini did not complete the deep brief; retry before using this for a hot video. ${tokenText}.`;
+  }
+
+  return `Gemini generated brief using ${brief.tokenUsage?.model || "configured model"}. ${tokenText}.`;
 }
 
 function scoreRationaleItems(brief: StoredStory["brief"], story: StoredStory) {

@@ -82,6 +82,8 @@ const viralTerms = [
   "lathi charge",
   "tear gas",
   "students",
+  "student",
+  "youth",
   "paper leak",
   "violence",
   "ban",
@@ -100,6 +102,18 @@ const viralTerms = [
   "bankipur",
   "chalo sansad",
   "sansad chalo",
+  "cjp",
+  "cockroach janta party",
+  "jantar mantar",
+  "neet",
+  "education minister",
+  "detention",
+  "detained",
+  "police",
+  "jan suraaj",
+  "prashant kishor",
+  "prestige battle",
+  "home turf",
   "caste",
   "communal",
   "corruption",
@@ -128,6 +142,7 @@ export function scoreSignal(signal: RawSignal, recentStories: StoredStory[]): St
   const politicalWeight = clamp(scoreKeywordSet(text, politicalTerms, signal.sourcePriority));
   const geopoliticalRelevance = clamp(scoreKeywordSet(text, geopoliticalTerms, 28));
   const viralPotential = clamp(scoreKeywordSet(text, viralTerms, 24) + headlineTension(signal.title));
+  const hotTopicBoost = hotTopicSignalBoost(text);
   const tags = inferTags(text);
 
   const totalScore = clamp(
@@ -135,7 +150,8 @@ export function scoreSignal(signal: RawSignal, recentStories: StoredStory[]): St
       noveltyScore * 0.24 +
         politicalWeight * 0.31 +
         geopoliticalRelevance * 0.2 +
-        viralPotential * 0.25
+        viralPotential * 0.25 +
+        hotTopicBoost
     )
   );
 
@@ -204,6 +220,30 @@ function inferTags(text: string) {
   });
 
   return Array.from(tags).slice(0, 6);
+}
+
+function hotTopicSignalBoost(text: string) {
+  if (
+    [
+      "cjp",
+      "cockroach janta party",
+      "sansad chalo",
+      "chalo sansad",
+      "bankipur",
+      "bypoll",
+      "by-election",
+      "byelection",
+      "jan suraaj",
+      "prashant kishor",
+      "film ban",
+      "censorship",
+      "public order",
+    ].some((term) => text.includes(term))
+  ) {
+    return 8;
+  }
+
+  return 0;
 }
 
 function tokenise(value: string) {

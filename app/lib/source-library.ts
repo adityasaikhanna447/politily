@@ -29,6 +29,30 @@ const indiaCoreTerms =
 
 export const DEFAULT_SOURCES: SignalSource[] = [
   {
+    id: "google-news-hot-viral-politics-india",
+    name: "India Viral Political Issues Sweep",
+    type: "rss",
+    url: googleNewsRss(
+      'India politics (protest OR bypoll OR "by-election" OR "paper leak" OR "student protest" OR censorship OR ban OR defection OR "public order" OR "viral video" OR "fact check")'
+    ),
+    region: "india",
+    category: "Hot topic / viral sweep",
+    priority: 101,
+    active: true,
+  },
+  {
+    id: "google-news-creator-video-candidates",
+    name: "Creator Video Candidate Monitor",
+    type: "rss",
+    url: googleNewsRss(
+      'India (BJP OR Congress OR AAP OR RJD OR "Jan Suraaj" OR "student protest" OR "Supreme Court" OR Parliament) (controversy OR outrage OR row OR "why it matters" OR explained)'
+    ),
+    region: "india",
+    category: "Hot topic / explainer candidates",
+    priority: 101,
+    active: true,
+  },
+  {
     id: "google-news-cjp-protest",
     name: "CJP Protest / Sansad Chalo Watch",
     type: "rss",

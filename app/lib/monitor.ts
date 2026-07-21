@@ -66,7 +66,7 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
   try {
     const threshold = numberEnv(env.POLITILY_SCORE_THRESHOLD, 72);
     const maxBriefs = numberEnv(env.POLITILY_MAX_DEEP_BRIEFS_PER_RUN, 1);
-    const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 8), 12);
+    const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 10), 12);
     const fetchTimeoutMs = Math.min(numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 9000), 12000);
     const minStoryDate = minStoryDateEnv(env.POLITILY_MIN_STORY_DATE);
     const maxMediaFetches = Math.min(numberEnv(env.POLITILY_MAX_MEDIA_FETCHES_PER_RUN, 6), 10);
@@ -137,6 +137,7 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
         }
 
         const scores = scoreSignal(signal, recentStories);
+        const triggerWorthy = isTriggerWorthy(signal, scores, threshold);
         const story: StoredStory = {
           id: newId("story"),
           fingerprint,
@@ -151,7 +152,7 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
           language: signal.language ?? "",
           publishedAt: signal.publishedAt ?? null,
           detectedAt: new Date().toISOString(),
-          status: scores.totalScore >= threshold ? "triggered" : "watching",
+          status: triggerWorthy ? "triggered" : "watching",
           ...scores,
         };
 
@@ -166,13 +167,13 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
         recentStories.unshift(story);
         createdCount += 1;
 
-        if (story.status === "triggered") {
+        if (triggerWorthy) {
           triggeredStories.push(story);
         }
       }
     }
 
-    for (const story of triggeredStories.slice(0, maxBriefs)) {
+    for (const story of prioritizeBriefCandidates(triggeredStories).slice(0, maxBriefs)) {
       const updated = await generateAndSaveBrief(env, story.id);
       if (updated?.brief) {
         const email = await sendBriefEmail(env, updated, updated.brief);
@@ -238,14 +239,28 @@ async function collectBriefSources(
   const relatedStories = recentStories
     .filter((candidate) => candidate.id !== story.id && isRelatedForBrief(story, candidate))
     .slice(0, 8);
-  const relatedLinks = relatedStories.map((candidate) => ({
-    id: `related_${candidate.id}`,
-    storyId: story.id,
-    title: candidate.title,
-    url: candidate.url,
-    sourceName: candidate.sourceName,
-    publishedAt: candidate.publishedAt,
-  }));
+  const relatedLinks = (
+    await Promise.all(
+      relatedStories.map(async (candidate) => {
+        const candidateLinks = await listStorySources(db, candidate.id);
+        return [
+          {
+            id: `related_${candidate.id}`,
+            storyId: story.id,
+            title: candidate.title,
+            url: candidate.url,
+            sourceName: candidate.sourceName,
+            publishedAt: candidate.publishedAt,
+          },
+          ...candidateLinks.map((link) => ({
+            ...link,
+            id: `related_${candidate.id}_${link.id}`,
+            storyId: story.id,
+          })),
+        ];
+      })
+    )
+  ).flat();
 
   return uniqueBriefLinks(sourceLinks.concat(relatedLinks)).slice(0, 14);
 }
@@ -285,6 +300,92 @@ function uniqueBriefLinks(links: Awaited<ReturnType<typeof listStorySources>>) {
   }
   return unique;
 }
+
+function isTriggerWorthy(
+  signal: RawSignal,
+  scores: Pick<StoredStory, "totalScore" | "politicalWeight" | "viralPotential" | "tags">,
+  threshold: number
+) {
+  if (scores.totalScore >= threshold) {
+    return true;
+  }
+
+  if (isHotSignal(signal) && scores.viralPotential >= 60 && scores.politicalWeight >= 60) {
+    return true;
+  }
+
+  return scores.viralPotential >= 78 && scores.politicalWeight >= 70;
+}
+
+function prioritizeBriefCandidates(stories: StoredStory[]) {
+  return [...stories].sort((left, right) => {
+    const leftHot = hotIssueScore(left);
+    const rightHot = hotIssueScore(right);
+    if (leftHot !== rightHot) {
+      return rightHot - leftHot;
+    }
+
+    const leftBlend = left.viralPotential * 0.42 + left.politicalWeight * 0.28 + left.totalScore * 0.3;
+    const rightBlend = right.viralPotential * 0.42 + right.politicalWeight * 0.28 + right.totalScore * 0.3;
+    if (leftBlend !== rightBlend) {
+      return rightBlend - leftBlend;
+    }
+
+    return dateValue(right.publishedAt || right.detectedAt) - dateValue(left.publishedAt || left.detectedAt);
+  });
+}
+
+function isHotSignal(signal: RawSignal) {
+  return hasAny(`${signal.title} ${signal.summary}`.toLowerCase(), hotIssueTerms);
+}
+
+function isHotStory(story: StoredStory) {
+  return hasAny(`${story.title} ${story.summary} ${story.tags.join(" ")}`.toLowerCase(), hotIssueTerms);
+}
+
+function hotIssueScore(story: StoredStory) {
+  const text = `${story.title} ${story.summary} ${story.tags.join(" ")}`.toLowerCase();
+  let score = 0;
+  if (hasAny(text, ["cjp", "cockroach janta party", "sansad chalo", "chalo sansad", "student protest", "paper leak", "neet"])) {
+    score += 4;
+  }
+  if (hasAny(text, ["bankipur", "bypoll", "by-election", "byelection", "jan suraaj", "prashant kishor"])) {
+    score += 4;
+  }
+  if (hasAny(text, ["ban", "censorship", "cbfc", "public order", "film", "documentary", "takedown"])) {
+    score += 3;
+  }
+  if (story.viralPotential >= 72) {
+    score += 2;
+  }
+  if (story.totalScore >= 72) {
+    score += 1;
+  }
+
+  return score;
+}
+
+const hotIssueTerms = [
+  "cjp",
+  "cockroach janta party",
+  "sansad chalo",
+  "chalo sansad",
+  "student protest",
+  "paper leak",
+  "neet",
+  "bankipur",
+  "bypoll",
+  "by-election",
+  "byelection",
+  "jan suraaj",
+  "prashant kishor",
+  "ban",
+  "censorship",
+  "cbfc",
+  "film ban",
+  "public order",
+  "takedown",
+];
 
 async function fetchSignals(source: SignalSource, timeoutMs: number): Promise<RawSignal[]> {
   const response = await fetchWithTimeout(source.url, {
@@ -411,6 +512,15 @@ function findRelatedStory(signal: RawSignal, recentStories: StoredStory[]) {
     return null;
   }
 
+  if (isHotSignal(signal)) {
+    const hotMatch = recentStories
+      .slice(0, 120)
+      .find((story) => isHotStory(story) && isRelatedForBrief(story, signalToStoryLike(signal)));
+    if (hotMatch) {
+      return hotMatch;
+    }
+  }
+
   let best: { story: StoredStory; similarity: number } | null = null;
   for (const story of recentStories.slice(0, 100)) {
     const similarity = titleSimilarity(signal.title, story.title);
@@ -424,6 +534,31 @@ function findRelatedStory(signal: RawSignal, recentStories: StoredStory[]) {
   }
 
   return null;
+}
+
+function signalToStoryLike(signal: RawSignal): StoredStory {
+  return {
+    id: signal.sourceId,
+    fingerprint: "",
+    title: signal.title,
+    summary: signal.summary,
+    url: signal.url,
+    imageUrl: signal.imageUrl ?? null,
+    articleExcerpt: signal.articleExcerpt ?? null,
+    sourceName: signal.sourceName,
+    sourceType: signal.sourceType,
+    sourceCountry: signal.sourceCountry ?? "",
+    language: signal.language ?? "",
+    publishedAt: signal.publishedAt ?? null,
+    detectedAt: "",
+    status: "watching",
+    noveltyScore: 0,
+    politicalWeight: 0,
+    geopoliticalRelevance: 0,
+    viralPotential: 0,
+    totalScore: 0,
+    tags: [],
+  };
 }
 
 function extractTag(value: string, tag: string) {
@@ -729,6 +864,15 @@ function isOlderThanMinimumDate(value: string | null | undefined, minStoryDate: 
 
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && parsed < minStoryDate;
+}
+
+function dateValue(value: string | null | undefined) {
+  if (!value) {
+    return 0;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function errorMessage(error: unknown) {
