@@ -324,7 +324,7 @@ a {
   margin-left: 220px;
   margin-top: 62px;
   min-height: calc(100vh - 62px);
-  padding: 18px;
+  padding: 18px 18px 112px;
 }
 
 .system-note {
@@ -437,6 +437,64 @@ a {
   color: var(--faint);
   font-size: 11px;
   margin-top: 2px;
+}
+
+.selected-story-footer {
+  align-items: center;
+  backdrop-filter: blur(18px);
+  background: rgba(8, 11, 11, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  bottom: 14px;
+  box-shadow: 0 16px 52px rgba(0, 0, 0, 0.38);
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  left: 238px;
+  padding: 12px;
+  position: fixed;
+  right: 18px;
+  z-index: 45;
+}
+
+.selected-story-copy {
+  min-width: 0;
+}
+
+.selected-story-copy span {
+  color: var(--gold);
+  display: block;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.selected-story-copy strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1.25;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-story-copy small {
+  color: var(--muted);
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-story-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .panel {
@@ -1325,12 +1383,21 @@ select:focus-visible {
     align-items: stretch;
     flex-direction: column;
     height: auto;
-    padding: 14px 10px 16px;
+    gap: 8px;
+    padding: 10px 10px 12px;
     position: static;
   }
 
   .brand-lockup {
     flex: none;
+  }
+
+  .brand-lockup strong {
+    font-size: 13px;
+  }
+
+  .brand-lockup span {
+    font-size: 9px;
   }
 
   .top-actions {
@@ -1339,14 +1406,15 @@ select:focus-visible {
   }
 
   .top-search,
-  .top-actions .btn,
-  .crawl-chip,
-  .score-chip {
-    min-height: 44px;
+  .top-actions .btn {
+    min-height: 40px;
   }
 
   .crawl-chip,
-  .score-chip,
+  .score-chip {
+    display: none;
+  }
+
   .top-actions .btn {
     width: 100%;
   }
@@ -1385,7 +1453,7 @@ select:focus-visible {
 
   .orm-main {
     margin: 0;
-    padding: 14px 12px 22px;
+    padding: 14px 12px 108px;
   }
 
   .system-note {
@@ -1495,6 +1563,28 @@ select:focus-visible {
 
   .feed-panel {
     padding: 14px;
+  }
+
+  .selected-story-footer {
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 14px 14px 0 0;
+    border-right: 0;
+    bottom: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    left: 0;
+    padding: 10px 12px 12px;
+    right: 0;
+  }
+
+  .selected-story-copy strong {
+    font-size: 13px;
+    max-width: 100%;
+  }
+
+  .selected-story-actions .btn {
+    min-height: 36px;
+    padding: 7px 10px;
   }
 
   .story-feed {

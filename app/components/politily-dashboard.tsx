@@ -356,6 +356,15 @@ export function PolitilyDashboard() {
         {view === "sources" && state ? <SourceDesk sourceMix={sourceMix} sources={sources} /> : null}
         {view === "setup" && state ? <SetupDesk state={state} latestRun={latestRun} /> : null}
       </section>
+
+      {selectedStory ? (
+        <SelectedStoryFooter
+          busy={busy}
+          onGenerate={generateBrief}
+          onOpenBrief={() => setView("brief")}
+          story={selectedStory}
+        />
+      ) : null}
     </main>
   );
 }
@@ -377,6 +386,38 @@ function Kpi({ tone, label, value, sub }: { tone: string; label: string; value: 
       <div className="kpi-label">{label}</div>
       <div className="kpi-sub">{sub}</div>
     </div>
+  );
+}
+
+function SelectedStoryFooter({
+  story,
+  busy,
+  onGenerate,
+  onOpenBrief,
+}: {
+  story: EnrichedStory;
+  busy: boolean;
+  onGenerate: (storyId: string) => void;
+  onOpenBrief: () => void;
+}) {
+  return (
+    <footer className="selected-story-footer">
+      <div className="selected-story-copy">
+        <span>Brief target</span>
+        <strong>{story.title}</strong>
+        <small>
+          {story.sourceName} · {story.reachScore}/100 · {story.sourceDiversity} source{story.sourceDiversity === 1 ? "" : "s"}
+        </small>
+      </div>
+      <div className="selected-story-actions">
+        <button className="btn btn-gold" disabled={busy} onClick={() => onGenerate(story.id)} type="button">
+          {story.brief ? "Refresh" : "Brief"}
+        </button>
+        <button className="btn btn-ghost" onClick={onOpenBrief} type="button">
+          Script
+        </button>
+      </div>
+    </footer>
   );
 }
 
