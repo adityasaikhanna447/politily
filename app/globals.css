@@ -445,7 +445,7 @@ a {
   background: rgba(2, 4, 5, 0.94);
   border: 1px solid var(--line);
   border-radius: 8px;
-  bottom: 14px;
+  bottom: 26px;
   box-shadow: 0 16px 52px rgba(0, 0, 0, 0.38);
   display: grid;
   gap: 14px;
@@ -542,7 +542,7 @@ a {
 .watch-grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(360px, 0.85fr) minmax(520px, 1.15fr);
+  grid-template-columns: minmax(360px, 0.9fr) minmax(500px, 1.1fr);
 }
 
 .feed-panel,
@@ -1192,7 +1192,7 @@ a {
 .dossier-head h2,
 .brief-title-row h2,
 .brief-empty h2 {
-  font-size: clamp(22px, 3vw, 32px);
+  font-size: clamp(22px, 2.4vw, 30px);
   font-weight: 900;
   line-height: 1.15;
   margin: 7px 0 0;
@@ -1987,7 +1987,7 @@ select:focus-visible {
     margin: 0 auto;
     max-width: 1600px;
     min-height: auto;
-    padding: 18px 24px 40px;
+    padding: 18px 24px 118px;
   }
 
   .system-note {
@@ -2062,7 +2062,7 @@ select:focus-visible {
   .watch-grid {
     align-items: start;
     gap: 16px;
-    grid-template-columns: minmax(440px, 0.92fr) minmax(500px, 1.08fr);
+    grid-template-columns: minmax(390px, 0.92fr) minmax(430px, 1.08fr);
     min-width: 0;
   }
 
@@ -2090,12 +2090,15 @@ select:focus-visible {
   }
 
   .story-feed {
-    gap: 14px;
-    max-height: calc(100vh - 245px);
+    gap: 10px;
+    max-height: calc(100vh - 288px);
+    min-height: 0;
+    overflow-y: auto;
     padding-right: 8px;
   }
 
   .story-feed.issue-feed {
+    align-content: start;
     display: grid;
     grid-auto-rows: auto;
   }
@@ -2108,9 +2111,9 @@ select:focus-visible {
     border-color: rgba(214, 206, 194, 0.14);
     color: var(--text);
     display: grid;
-    min-height: 220px;
+    min-height: 0;
     overflow: visible;
-    padding: 14px;
+    padding: 12px;
   }
 
   .issue-card-top {
@@ -2130,8 +2133,8 @@ select:focus-visible {
   }
 
   .issue-card h3 {
-    font-size: 21px;
-    line-height: 1.18;
+    font-size: 18px;
+    line-height: 1.22;
     margin: 0;
   }
 
@@ -2175,16 +2178,17 @@ select:focus-visible {
     background:
       linear-gradient(145deg, rgba(46, 125, 225, 0.09), transparent 40%),
       rgba(11, 16, 18, 0.94);
-    max-height: calc(100vh - 148px);
+    max-height: calc(100vh - 202px);
     overflow: auto;
-    padding: 18px;
+    padding: 16px 16px 116px;
     position: sticky;
     top: 14px;
   }
 
   .dossier-head {
-    gap: 16px;
-    grid-template-columns: minmax(0, 1fr) 118px;
+    align-items: stretch;
+    gap: 14px;
+    grid-template-columns: minmax(0, 1fr) 112px;
   }
 
   .dossier-head .story-image-dossier {
@@ -2193,17 +2197,25 @@ select:focus-visible {
   }
 
   .dossier-head h2 {
-    font-size: clamp(22px, 2.15vw, 34px);
+    font-size: clamp(22px, 2vw, 28px);
     letter-spacing: 0;
-    line-height: 1.05;
+    line-height: 1.08;
   }
 
   .reach-box {
-    min-height: 132px;
+    min-height: 112px;
   }
 
   .selected-story-footer {
-    display: none;
+    background: rgba(2, 4, 5, 0.97);
+    bottom: 30px;
+    display: grid;
+    left: 50%;
+    max-width: 920px;
+    right: auto;
+    transform: translateX(-50%);
+    width: min(920px, calc(100vw - 64px));
+    z-index: 60;
   }
 }
 

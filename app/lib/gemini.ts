@@ -30,7 +30,7 @@ export async function generateBriefWithGemini(
   story: StoredStory,
   sourceLinks: StorySourceLink[]
 ): Promise<PolitilyBrief> {
-  const compactSources = uniqueSourceLinks(sourceLinks).slice(0, 10);
+  const compactSources = uniqueSourceLinks(sourceLinks).slice(0, 16);
   const sourceContexts = await fetchSourceContexts(story, compactSources);
 
   if (!env.GEMINI_API_KEY) {
@@ -73,7 +73,7 @@ export async function generateBriefWithGemini(
 
       if (!response.ok) {
         lastFailure = `HTTP ${response.status}${await shortErrorBody(response)}`;
-        if (!isRetryableStatus(response.status)) {
+        if (response.status === 401 || response.status === 403) {
           break;
         }
         continue;
@@ -125,6 +125,16 @@ function normaliseGeminiBrief(
     whatHappensNext: normaliseList(parsed.whatHappensNext),
     audienceReachScore: normaliseScore(parsed.audienceReachScore, story.totalScore),
     audienceReachReason: String(parsed.audienceReachReason || ""),
+    researchDepthScore: normaliseScore(parsed.researchDepthScore, story.totalScore),
+    dataPoints: normaliseList(parsed.dataPoints),
+    researchQuestions: normaliseList(parsed.researchQuestions),
+    institutionalContext: String(parsed.institutionalContext || ""),
+    accountabilityMap: normaliseList(parsed.accountabilityMap),
+    stakeholderMap: normaliseList(parsed.stakeholderMap),
+    powerAnalysis: String(parsed.powerAnalysis || ""),
+    counterArguments: normaliseList(parsed.counterArguments),
+    openQuestions: normaliseList(parsed.openQuestions),
+    storytellingBeats: normaliseList(parsed.storytellingBeats),
     videoAngles: normaliseList(parsed.videoAngles),
     sourcePositions: normaliseList(parsed.sourcePositions),
     scoreRationale: normaliseScoreRationale(parsed.scoreRationale),
@@ -132,7 +142,7 @@ function normaliseGeminiBrief(
       normaliseList(parsed.citedUrls)
         .concat(compactSources.map((link) => link.url))
         .concat(sourceContexts.map((context) => context.url))
-    ).slice(0, 14),
+    ).slice(0, 20),
     tokenUsage: {
       promptTokens: normaliseOptionalNumber(payload.usageMetadata?.promptTokenCount),
       outputTokens: normaliseOptionalNumber(payload.usageMetadata?.candidatesTokenCount),
@@ -164,18 +174,30 @@ function buildPrompt(
 
 Create a fact-first issue dossier for a newsroom research desk. This is not a newspaper summary. The output must help a political creator decide whether this issue deserves a video today. Use an original Politily explainer voice: sharp hook, clear context, historical memory, multiple perspectives, and creator-ready structure. Do not imitate any living creator or YouTube channel.
 
-Priority rules:
+Research editor rules:
 1. Separate confirmed facts, reported claims, allegations, and political framing.
-2. Prefer primary documents, court records, government orders, official statements, parliamentary records, and direct party releases over media summaries.
-3. Use agencies and media as triangulation, not as final proof.
-4. If a story needs historical context, name the real institutional, regional, social, or party tension and say exactly what still needs verification.
-5. If the source base is thin, say so clearly. Do not invent facts, dates, laws, people, numbers, or quotes.
-6. Keep all research fields in English. Write only videoScript and cta in Hindi using Devanagari script.
-7. Optimize for 12-15 daily briefs: avoid repetition and prioritize evidence, competing claims, Indian audience reach, and creator strategy.
-8. Every headline and research field must be in English, even if an original source is in another Indian language.
-9. Avoid generic filler like "identify the law" or "verify the source" unless you also name the specific document, institution, party, person, or missing fact.
-10. Brief the whole issue cluster, not only the primary URL. If 4+ unique sources point to the same issue, synthesize their angles and state whether this is a viral candidate.
-11. Source positions must say what each source emphasizes, not repeat "reports the signal".
+2. Prefer primary documents, court records, government orders, official statements, parliamentary records, election data, exam authority records, and direct party releases over media summaries.
+3. Use agencies and media as triangulation, not as final proof. If PTI/UNI/ANI or a known portal is only repeating an official line, say that.
+4. Brief the whole issue cluster, not only the primary URL. Synthesize the source trail into one creator-ready issue dossier.
+5. No generic filler. When evidence is missing, name the exact document, dataset, person, institution, hearing, press note, police order, ECI record, affidavit, ministry response, or local source required.
+6. Keep all research fields in English. Write videoScript and cta in Roman Hindi/Hinglish only. Do not use Devanagari script.
+7. No token compromise. Prefer depth, chronology, data, and hard questions over brevity.
+8. Optimize for 12-15 strong daily briefs: every brief must explain whether this deserves a video, why Indian viewers would care, and what angle can travel.
+9. Every headline and research field must be in English, even if an original source is in another Indian language.
+10. Source positions must say what each source emphasizes, what it adds, and what its limitation is.
+11. Do not imitate any living creator, channel, or protected style. Use an original serious Indian political explainer voice.
+12. If source text is thin or blocked, clearly label the brief as thin and convert missing facts into a concrete verification plan.
+
+Before writing, ask yourself and answer inside the JSON:
+- What exactly happened, where, when, who triggered it, and who responded?
+- Why did this escalate now?
+- Which institution had power or duty here?
+- Who can resign, who cannot practically resign, who can order an inquiry, and what is the real accountability chain?
+- What numbers define scale: vote margins, arrests, turnout, affected students, budget, seats, dates, court listings, district data, or legal sections?
+- Which side benefits if this narrative spreads?
+- What would the strongest critic say, and what would the strongest defence say?
+- What primary record would prove or weaken the story?
+- What should a creator avoid overclaiming?
 
 Issue package:
 Issue: ${issueFrame.label}
@@ -205,16 +227,16 @@ Return only valid JSON with this exact shape:
 {
   "briefTitle": "short title",
   "hook": "one strong opening line that names the core political tension",
-  "whatHappened": "plain-language issue summary, combining all related source headlines/excerpts into one event narrative",
-  "whyItMatters": "political significance for governance, elections, party strategy, rights, public order, or youth/public mood",
-  "historicalContext": "specific background and parallels; if unknown, name the exact missing record instead of writing generic advice",
+  "whatHappened": "180-260 words. Plain-language issue summary with exact date/place/actors/trigger/response. Combine related source headlines/excerpts into one event narrative.",
+  "whyItMatters": "180-260 words. Political significance for governance, elections, party strategy, rights, public order, youth/public mood, or institution credibility.",
+  "historicalContext": "220-380 words. Specific background, previous events, relevant law/policy/election history, and parallels. If unknown, name the exact missing record.",
   "geographicalContext": "places, institutions, regions, constituencies, or international context",
   "keyPeople": ["person or institution"],
-  "factsAndFigures": ["verifiable fact or number, with caveat if needed"],
+  "factsAndFigures": ["8-14 verifiable facts or numbers; if unavailable, name the exact dataset/document needed and why it matters"],
   "sourceConfidence": "how reliable the available source base is",
   "evidenceGrade": "primary-backed | multi-source | reported | disputed | thin",
-  "timeline": ["date or period - event - source/caveat"],
-  "claimMatrix": ["claim - who says it - evidence level - what would verify/refute it"],
+  "timeline": ["8-12 entries when possible: date or period - event - source/caveat"],
+  "claimMatrix": ["8-12 entries: claim - who says it - evidence level - what would verify/refute it"],
   "primaryDocuments": ["official order, court record, filing, statement, dataset, or document to obtain"],
   "missingEvidence": ["specific missing source or unresolved fact"],
   "regionalContext": "state/regional/social/history context needed to understand the story",
@@ -223,6 +245,16 @@ Return only valid JSON with this exact shape:
   "whatHappensNext": ["watch item"],
   "audienceReachScore": 0,
   "audienceReachReason": "why Indian audience may or may not care",
+  "researchDepthScore": 0,
+  "dataPoints": ["specific data point, statistic, historical number, date, law section, constituency figure, arrest/count/case detail, or exact dataset to pull"],
+  "researchQuestions": ["hard question a serious researcher should ask before scripting"],
+  "institutionalContext": "who has formal power, who has political responsibility, what the accountability chain is, and what action is realistically possible",
+  "accountabilityMap": ["actor/institution - formal role - political responsibility - evidence needed"],
+  "stakeholderMap": ["stakeholder - incentive - public position or likely concern"],
+  "powerAnalysis": "who gains, who loses, who controls information, who controls process, and why the timing matters",
+  "counterArguments": ["strongest defence/counter-view and what evidence would test it"],
+  "openQuestions": ["unanswered but important question"],
+  "storytellingBeats": ["creator beat: opening scene, setup, historical turn, evidence turn, counter-view, hard question, what next"],
   "videoAngles": ["specific video angle with hook, audience promise, and why this can/cannot go viral"],
   "sourcePositions": ["source name - what it claims or emphasizes - why it matters or its limitation"],
   "scoreRationale": {
@@ -232,8 +264,8 @@ Return only valid JSON with this exact shape:
     "viralPotential": "why it can or cannot travel online",
     "audienceReach": "why this reaches Indian viewers"
   },
-  "videoScript": "Hindi Devanagari structured creator script with hook, context, history, evidence, multiple perspectives, what next, CTA. Sound like a serious explainer, not a school assignment.",
-  "cta": "short Hindi Devanagari call to action",
+  "videoScript": "900-1400 words in Roman Hindi/Hinglish, not Devanagari. Structure: cold open, exact event, chronology, historical background, data, institutional accountability, strongest government/defence view, strongest critic/protester/opposition view, what is unverified, why it matters for Indian viewers, what happens next, CTA. Sound like a serious creator research script, not a school assignment.",
+  "cta": "short Roman Hindi/Hinglish call to action",
   "caution": "what not to overclaim",
   "citedUrls": ["url"]
 }`;
@@ -263,14 +295,14 @@ function parseBrief(text?: string): Omit<PolitilyBrief, "generatedBy" | "generat
 function geminiAttempts(primaryModel: string): GeminiAttempt[] {
   const models = uniqueStrings([primaryModel, "gemini-3.5-flash", "gemini-3.1-flash-lite"]);
   const attempts: GeminiAttempt[] = [
-    { model: models[0], maxOutputTokens: 3000 },
-    { model: models[0], maxOutputTokens: 2200 },
+    { model: models[0], maxOutputTokens: 8192 },
+    { model: models[0], maxOutputTokens: 6144 },
   ];
   if (models[1]) {
-    attempts.push({ model: models[1], maxOutputTokens: 2200 });
+    attempts.push({ model: models[1], maxOutputTokens: 6144 });
   }
   if (models[2]) {
-    attempts.push({ model: models[2], maxOutputTokens: 1800 });
+    attempts.push({ model: models[2], maxOutputTokens: 4096 });
   }
 
   return attempts;
@@ -356,7 +388,7 @@ function inferIssueFrame(story: StoredStory, sourceLinks: StorySourceLink[]) {
 async function fetchSourceContexts(story: StoredStory, sourceLinks: StorySourceLink[]) {
   const targets = uniqueStrings([story.url, ...sourceLinks.map((link) => link.url)])
     .filter(Boolean)
-    .slice(0, 4);
+    .slice(0, 7);
   const sourceNameByUrl = new Map<string, string>();
   sourceNameByUrl.set(story.url, story.sourceName);
   sourceLinks.forEach((link) => sourceNameByUrl.set(link.url, link.sourceName));
@@ -390,7 +422,7 @@ async function fetchSourceContext(url: string, sourceName: string): Promise<Sour
 
   const text = await response.text();
   const title = cleanText(extractTitle(text) || sourceName);
-  const excerpt = cleanText(htmlToText(text)).slice(0, 2600);
+  const excerpt = cleanText(htmlToText(text)).slice(0, 3600);
   if (excerpt.length < 120) {
     return null;
   }
@@ -516,6 +548,27 @@ function templateBrief(
     audienceReachScore: story.totalScore,
     audienceReachReason:
       inferredTopic.audienceReachReason,
+    researchDepthScore: sourceContexts.length ? 58 : 34,
+    dataPoints: [
+      `Politily total score: ${story.totalScore}/100`,
+      `Political weight: ${story.politicalWeight}/100`,
+      `Novelty score: ${story.noveltyScore}/100`,
+      `Viral potential: ${story.viralPotential}/100`,
+      `Known source trail: ${uniqueStrings([story.sourceName, ...compactSources.map((link) => link.sourceName)]).length} source(s)`,
+      "Pull the primary document, official statement, police order, court record, ECI notice, ministry response, or local dataset before recording.",
+    ],
+    researchQuestions: inferredTopic.researchQuestions,
+    institutionalContext: inferredTopic.institutionalContext,
+    accountabilityMap: inferredTopic.accountabilityMap,
+    stakeholderMap: inferredTopic.stakeholderMap,
+    powerAnalysis: inferredTopic.powerAnalysis,
+    counterArguments: inferredTopic.counterArguments,
+    openQuestions: [
+      "What exact primary record proves the central claim?",
+      "Which side's framing is being repeated without independent verification?",
+      "What number or document would change the story's conclusion?",
+    ],
+    storytellingBeats: inferredTopic.storytellingBeats,
     videoAngles: inferredTopic.videoAngles,
     sourcePositions: compactSources.length
       ? compactSources.map((link) => `${link.sourceName} - emphasizes: ${cleanTitle(link.title)}. Use as a triangulation point, then verify against primary records.`)
@@ -528,7 +581,7 @@ function templateBrief(
       audienceReach: `Indian audience reach is estimated at ${story.totalScore}/100 from the combined story score.`,
     },
     videoScript: buildFallbackHindiScript(story, inferredTopic, contextLead),
-    cta: "अगर आप राजनीति को शोर नहीं, सबूत और संदर्भ से समझना चाहते हैं, तो Politily को फॉलो कीजिए.",
+    cta: "Aap comment me batayein: is mudde par sabse zaroori sawaal evidence ka hai, politics ka hai, ya public impact ka?",
     caution:
       "Do not publish allegations as facts. Separate confirmed records, reported claims, and political spin.",
     citedUrls,
@@ -570,6 +623,44 @@ function inferStoryTopic(story: StoredStory) {
     videoAngles: [
       "Explain what happened, what is verified, what is still a claim, and who benefits if this narrative spreads.",
     ],
+    researchQuestions: [
+      "What exactly happened, on what date, in which institution/place, and who first confirmed it?",
+      "Which part is confirmed record and which part is political framing?",
+      "Who has formal responsibility and who has only political accountability?",
+      "What data point would prove scale or public impact?",
+      "Which actor benefits if this narrative dominates the day?",
+      "What is the strongest counter-argument from the other side?",
+      "What primary document must be opened before recording?",
+      "What should the creator avoid overclaiming?",
+    ],
+    institutionalContext:
+      "Identify the institution with formal authority, the official with operational responsibility, the political executive facing accountability, and the record that can prove action or inaction.",
+    accountabilityMap: [
+      "Primary institution - formal duty - verify through order, notification, filing, or statement.",
+      "Political executive/party - public accountability - verify through direct quote and official response.",
+      "Affected public group - lived impact - verify through local reporting and direct evidence.",
+    ],
+    stakeholderMap: [
+      "Government or ruling side - wants control, order, and legitimacy.",
+      "Opposition or critics - wants accountability and narrative pressure.",
+      "Affected public - wants remedy, clarity, and proof.",
+      "Media/platform audience - wants a clear conflict and credible evidence.",
+    ],
+    powerAnalysis:
+      "The core power question is who controls the official record, who controls the public narrative, and who pays the political cost if evidence contradicts the dominant framing.",
+    counterArguments: [
+      "Government/authority defence - the action may be routine, legal, or based on incomplete public information; test it against the exact order and timeline.",
+      "Critic/opposition claim - the action may show accountability failure or political misuse; test it against documents, data, and independent reporting.",
+    ],
+    storytellingBeats: [
+      "Cold open: the one fact that makes the audience stop scrolling.",
+      "Event: what happened, where, when, and who is involved.",
+      "History: the older tension that makes this politically loaded.",
+      "Evidence: documents, data, source trail, and what is still missing.",
+      "Both sides: strongest defence and strongest criticism.",
+      "Hard question: what must be answered before the narrative is trusted.",
+      "What next: institution, court, election, street, or party response to watch.",
+    ],
   };
 
   if (text.includes("bankipur") || text.includes("bypoll") || text.includes("by-election")) {
@@ -606,6 +697,45 @@ function inferStoryTopic(story: StoredStory) {
       videoAngles: [
         "Bankipur bypoll: why one Patna seat can become a BJP vs opposition stress test.",
         "Candidate switch, local history, and vote split: what Bankipur tells us before bigger Bihar politics.",
+      ],
+      researchQuestions: [
+        "Why did Bankipur become a prestige battle rather than a routine bypoll?",
+        "What were the last assembly and Lok Sabha booth/segment margins in this seat?",
+        "Who is the BJP candidate, what is their local network, and what is the anti-incumbency risk?",
+        "How does Jan Suraaj or PK's entry change vote split versus actual winnability?",
+        "Which caste, class, youth, trader, and urban voter blocs matter in Bankipur?",
+        "What does the ECI notification and candidate affidavit confirm?",
+        "Which local issue is stronger than national party branding here?",
+        "What would prove that this bypoll is a state-level mood signal rather than local noise?",
+      ],
+      institutionalContext:
+        "The Election Commission controls schedule, nomination, candidate affidavit, and result data. Parties control candidate selection, campaign resources, and booth machinery. Local voters and turnout decide whether the story is a prestige battle or only media framing.",
+      accountabilityMap: [
+        "Election Commission - schedule and candidate records - verify through ECI notification and affidavits.",
+        "BJP state unit/candidate - seat defence and campaign claim - verify through candidate announcement, past margin, and booth data.",
+        "Opposition/Jan Suraaj/RJD - challenge or vote-split claim - verify through candidate list, alliance posture, and local reporting.",
+        "Local administration - code of conduct and polling management - verify through official district/ECI updates.",
+      ],
+      stakeholderMap: [
+        "BJP - wants to protect a prestige urban seat and signal organizational control.",
+        "Jan Suraaj/PK - wants proof that new politics can disturb established parties.",
+        "RJD/opposition - wants anti-incumbency consolidation or BJP vote erosion.",
+        "Bankipur voters - evaluate candidate credibility, local services, and party loyalty.",
+      ],
+      powerAnalysis:
+        "The power story is not only who wins; it is who proves narrative strength. BJP needs retention, challengers need momentum, and media wants a symbolic urban Bihar test. The missing proof is vote-share history, booth data, and credible local reporting.",
+      counterArguments: [
+        "BJP defence: Bankipur may remain a strong organizational seat; test through past margins and booth-level strength.",
+        "Challenger claim: a bypoll can expose anti-incumbency; test through candidate credibility, turnout, and vote split.",
+        "Skeptical view: one bypoll may not predict Bihar mood; test by comparing similar urban seats and turnout patterns.",
+      ],
+      storytellingBeats: [
+        "Open with why one Patna seat is suddenly being treated like a prestige test.",
+        "Explain Bankipur's past result, margin, and party hold.",
+        "Introduce candidates and the PK/Jan Suraaj or opposition factor.",
+        "Show data needed: ECI records, turnout, vote share, affidavits.",
+        "Compare BJP's strength claim with opposition's vote-split or anti-incumbency claim.",
+        "End with what polling day turnout will reveal.",
       ],
     };
   }
@@ -652,6 +782,48 @@ function inferStoryTopic(story: StoredStory) {
         "CJP/Sansad Chalo: youth anger, exam accountability, and the politics of protest.",
         "What is confirmed, what is rumour, and why student protests can reshape political narratives.",
       ],
+      researchQuestions: [
+        "What was the exact protest call, route, date, demand list, and organiser statement?",
+        "What did Delhi Police permit, restrict, detain, or cite legally?",
+        "Which education/exam grievance triggered the mobilization and what is verified?",
+        "Why is the Education Minister politically accountable, and what can/cannot he directly resign over or order administratively?",
+        "Which institution has formal power: ministry, NTA/exam body, court, police, Parliament, or state administration?",
+        "How many students/protesters were involved according to police, organisers, and independent reporting?",
+        "Who benefits politically from framing this as youth anger, law-and-order breakdown, or opposition-backed protest?",
+        "What primary record would separate real grievance from propaganda or exaggeration?",
+      ],
+      institutionalContext:
+        "Education protest accountability usually sits across multiple layers: exam authority or institution handles operational failures, the ministry faces political responsibility and can order reviews or reforms, courts can supervise legality, police control protest restrictions, and Parliament/opposition converts grievance into national pressure. A minister's resignation is political, not an automatic legal remedy; the stronger research question is what action, inquiry, or reform the institution can formally order.",
+      accountabilityMap: [
+        "Education Ministry - political responsibility and policy direction - verify through ministry statements, Parliament replies, inquiry orders, and reform notices.",
+        "Exam authority/institution - operational accountability - verify through official notices, result/cancellation data, and grievance records.",
+        "Delhi Police - public-order restrictions or detentions - verify through police order, FIR, detention count, and legal section cited.",
+        "Protest organisers/students - demands and scale - verify through memorandum, route call, live footage, and independent ground reporting.",
+        "Opposition parties - amplification or support - verify through direct statements and Parliament action.",
+      ],
+      stakeholderMap: [
+        "Students - want accountability, exam fairness, jobs/education security, and dignity.",
+        "Education Ministry/exam bodies - want institutional credibility and damage control.",
+        "Delhi Police/administration - want public-order control and legal defensibility.",
+        "Opposition - wants to turn youth anger into national accountability pressure.",
+        "Ruling party - wants to avoid the story becoming a symbol of governance failure.",
+      ],
+      powerAnalysis:
+        "The power conflict is between street pressure and institutional control. Students control moral visibility, police control physical space, the ministry controls policy response, and parties control amplification. The viral risk rises when a young-person grievance meets force, silence, or a dismissive political quote.",
+      counterArguments: [
+        "Government/authority defence: restrictions may be public-order measures and grievances may already be under review; test through orders and ministry records.",
+        "Protester claim: the system ignores students until pressure rises; test through chronology of complaints, meetings, notices, and outcomes.",
+        "Propaganda risk: party amplification may distort scale; test through independent ground reporting and direct student demands.",
+      ],
+      storytellingBeats: [
+        "Open with the visual: students marching toward power and police/state response.",
+        "Name the exact grievance and protest demand.",
+        "Build chronology from exam issue to mobilisation.",
+        "Explain which institution is actually accountable for what.",
+        "Show both sides: public order versus youth accountability.",
+        "Ask the hard question: reform, inquiry, resignation, or narrative management?",
+        "End with what official action would prove seriousness.",
+      ],
     };
   }
 
@@ -688,6 +860,45 @@ function inferStoryTopic(story: StoredStory) {
       videoAngles: [
         "What the bill actually changes, who benefits, who worries, and what must be verified in the text.",
       ],
+      researchQuestions: [
+        "What exactly changes in the bill compared with the previous law or status quo?",
+        "Which ministry introduced it and what problem does the statement of objects claim to solve?",
+        "Who gains power, compliance burden, money, protection, or legal risk?",
+        "Which citizen, state, company, community, or institution is directly affected?",
+        "What does the opposition or civil-society critique say, and is it based on the text?",
+        "Was it referred to a committee, debated, amended, or rushed?",
+        "Which court judgments, earlier laws, or policy failures form the background?",
+        "What line in the bill should the creator show on screen?",
+      ],
+      institutionalContext:
+        "Parliament can pass the law, the ministry frames the objective and rules, regulators or state agencies may enforce it, courts test constitutionality, and citizens/industry experience the practical impact. The research must separate bill text from political speeches about the bill.",
+      accountabilityMap: [
+        "Sponsoring ministry - policy intent and rule-making - verify through bill text, statement of objects, and press note.",
+        "Parliament - legislative scrutiny - verify through debate, committee referral, and amendment record.",
+        "Regulator/state agency - enforcement power - verify through clauses and delegated rules.",
+        "Affected public/industry - impact claim - verify through stakeholder statements and independent data.",
+      ],
+      stakeholderMap: [
+        "Government - wants reform, regulation, or political messaging.",
+        "Opposition - wants scrutiny, rights/federalism/industry concerns, or delay.",
+        "Affected industry/public - wants clarity on cost, rights, compliance, and risk.",
+        "Courts/legal experts - test constitutional and procedural questions.",
+      ],
+      powerAnalysis:
+        "The power shift usually sits in enforcement, discretion, penalties, exemptions, or rule-making. A creator should show the clause that moves power, then explain who benefits and who loses bargaining power.",
+      counterArguments: [
+        "Government defence: the bill solves a real policy gap; test through data and the statement of objects.",
+        "Critic claim: the bill may overreach or centralise power; test through exact clauses and legal precedent.",
+        "Industry/public concern: compliance may harm smaller players or citizens; test through cost and affected-group data.",
+      ],
+      storytellingBeats: [
+        "Open with one concrete life/business/governance impact.",
+        "Show the exact bill change in simple language.",
+        "Explain the older legal or political problem.",
+        "Name winners, losers, and enforcement power.",
+        "Compare government claim with strongest critique.",
+        "End with committee/court/rule-making watch items.",
+      ],
     };
   }
 
@@ -700,6 +911,30 @@ function buildFallbackHindiScript(
   contextLead: string
 ) {
   const context = contextLead.replace(/\s+/g, " ").slice(0, 420);
+
+  return `Hook: Aaj ka mudda hai - ${story.title}
+
+Pehla sawaal: yeh sirf ek headline hai, ya politics me koi real signal? Politily is story ko ${story.totalScore}/100 score deta hai, lekin score final truth nahi hota. Final video tabhi banana chahiye jab source trail, primary record, aur local impact teenon line up ho jaayein.
+
+Kya hua: available sources ke hisaab se, ${context}
+
+Why it matters: ${topic.whyItMatters}
+
+History aur context: ${topic.historicalContext}
+
+Institutional accountability: ${topic.institutionalContext}
+
+Evidence line: abhi isse final proof mat maaniye. Pehle primary document, official statement, agency copy, aur regional reporting compare karni hogi. Agar police order, ECI notice, court record, ministry reply, ya candidate affidavit missing hai, to script me clearly bolna hoga ki evidence thin hai.
+
+Power question: ${topic.powerAnalysis}
+
+Donon side: Ek side kahegi ki authority ya party apna legal/political kaam kar rahi hai. Doosri side kahegi ki accountability, public anger, ya misuse of power ka sawaal hai. Creator ka kaam dono framing ko repeat karna nahi, balki document aur data se test karna hai.
+
+Hard questions: ${topic.researchQuestions.slice(0, 4).join(" ")}
+
+Aage kya dekhna hai: ${topic.whatHappensNext.join(" ")}
+
+CTA: Comment me batayein, is mudde par sabse zaroori sawaal evidence ka hai, politics ka hai, ya public impact ka?`;
 
   return `हुक: आज का मुद्दा है - ${story.title}
 
@@ -745,7 +980,7 @@ function decodeEntities(value: string) {
 
 function normaliseList(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value.map(String).filter(Boolean).slice(0, 12);
+    return value.map(String).filter(Boolean).slice(0, 20);
   }
 
   if (typeof value === "string" && value.trim()) {

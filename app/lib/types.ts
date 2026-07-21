@@ -116,6 +116,16 @@ export interface PolitilyBrief {
   whatHappensNext: string[];
   audienceReachScore?: number;
   audienceReachReason?: string;
+  researchDepthScore?: number;
+  dataPoints?: string[];
+  researchQuestions?: string[];
+  institutionalContext?: string;
+  accountabilityMap?: string[];
+  stakeholderMap?: string[];
+  powerAnalysis?: string;
+  counterArguments?: string[];
+  openQuestions?: string[];
+  storytellingBeats?: string[];
   videoAngles?: string[];
   sourcePositions?: string[];
   scoreRationale?: {

@@ -262,7 +262,7 @@ async function collectBriefSources(
     )
   ).flat();
 
-  return uniqueBriefLinks(sourceLinks.concat(relatedLinks)).slice(0, 14);
+  return uniqueBriefLinks(sourceLinks.concat(relatedLinks)).slice(0, 20);
 }
 
 function isRelatedForBrief(story: StoredStory, candidate: StoredStory) {

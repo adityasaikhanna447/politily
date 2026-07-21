@@ -181,7 +181,7 @@ export function PolitilyDashboard() {
 
   async function generateBrief(storyId: string) {
     setBusy(true);
-    setStatus("Generating English brief and Hindi script");
+    setStatus("Generating deep English brief and Roman Hindi script");
     try {
       const response = await fetch("/api/brief", {
         method: "POST",
@@ -511,7 +511,7 @@ function OverviewDesk({
           <StrategyRow label="Use today" value={`${urgent} stories above reach threshold`} />
           <StrategyRow label="Brief discipline" value="Generate only the strongest 12-15 briefs per day." />
           <StrategyRow label="Verification rule" value="No one-source video. Require primary record or multi-source trail." />
-          <StrategyRow label="Script language" value="Research in English, creator script in Hindi." />
+          <StrategyRow label="Script language" value="Research in English, creator script in Roman Hindi/Hinglish." />
         </div>
       </section>
 
@@ -872,9 +872,9 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
   if (!brief) {
     return (
       <section className="panel brief-empty">
-        <PanelTitle title="Brief and Hindi script" />
+        <PanelTitle title="Deep brief and Roman Hindi script" />
         <h2>No generated brief yet</h2>
-        <p>Generate a brief to get English research context, source confidence, multiple perspectives, and Hindi creator script.</p>
+        <p>Generate a deep issue dossier with English research context, hard questions, data checks, source confidence, and a Roman Hindi creator script.</p>
         <button className="btn btn-gold" disabled={busy} onClick={() => onGenerate(story.id)} type="button">
           Generate brief
         </button>
@@ -895,7 +895,7 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
         </div>
         <div className="brief-title-row">
           <div>
-            <PanelTitle title="Brief and Hindi script" />
+            <PanelTitle title="Deep brief and Roman Hindi script" />
             <h2>{brief.briefTitle}</h2>
             <p>{brief.hook}</p>
           </div>
@@ -911,6 +911,10 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
         ) : null}
         <div className="insight-grid">
           <ResearchTile label="Audience reach" value={`${brief.audienceReachScore ?? story.reachScore}/100 - ${brief.audienceReachReason || story.reachReason}`} />
+          <ResearchTile
+            label="Research depth"
+            value={typeof brief.researchDepthScore === "number" ? `${brief.researchDepthScore}/100` : "Regenerate for depth score"}
+          />
           <ResearchTile label="Evidence grade" value={brief.evidenceGrade} />
           <ResearchTile label="Gemini tokens" value={briefTokenLabel(brief)} />
           <ResearchTile label="Source confidence" value={brief.sourceConfidence} />
@@ -922,6 +926,17 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
       <TextPanel title="Why it matters" text={brief.whyItMatters} />
       <TextPanel title="Historical context" text={brief.historicalContext} />
       <TextPanel title="Regional context" text={brief.regionalContext || brief.geographicalContext} />
+      <TextPanel title="Institutional accountability" text={brief.institutionalContext || "No institutional accountability context generated yet."} />
+      <TextPanel title="Power analysis" text={brief.powerAnalysis || "No power analysis generated yet."} />
+      <ListPanel title="Data points and datasets" items={brief.dataPoints ?? []} />
+      <ListPanel title="Hard research questions" items={brief.researchQuestions ?? []} />
+      <ListPanel title="Accountability map" items={brief.accountabilityMap ?? []} />
+      <ListPanel title="Stakeholder map" items={brief.stakeholderMap ?? []} />
+      <ListPanel title="Counter-arguments" items={brief.counterArguments ?? []} />
+      <ListPanel title="Open questions" items={brief.openQuestions ?? []} />
+      <ListPanel title="Storytelling beats" items={brief.storytellingBeats ?? []} />
+      <ListPanel title="Facts and figures" items={brief.factsAndFigures} />
+      <ListPanel title="Timeline" items={brief.timeline} />
       <ListPanel title="Source positions" items={brief.sourcePositions ?? []} />
       <ListPanel title="Video angles" items={brief.videoAngles ?? []} />
       <ListPanel title="Claim matrix" items={brief.claimMatrix} />
@@ -929,7 +944,7 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
       <ListPanel title="What happens next" items={brief.whatHappensNext} />
 
       <div className="panel span-2">
-        <PanelTitle title="Hindi creator script" />
+        <PanelTitle title="Roman Hindi creator script" />
         <pre className="script-box">{brief.videoScript}</pre>
       </div>
 

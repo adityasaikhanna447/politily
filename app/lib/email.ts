@@ -44,6 +44,9 @@ export async function sendBriefEmail(
 
 function buildHtml(story: StoredStory, brief: PolitilyBrief, storyLink: string) {
   const facts = brief.factsAndFigures.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const dataPoints = (brief.dataPoints ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const questions = (brief.researchQuestions ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const sourcePositions = (brief.sourcePositions ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   const next = brief.whatHappensNext.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   const sources = brief.citedUrls
     .map((url) => `<li><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></li>`)
@@ -56,18 +59,23 @@ function buildHtml(story: StoredStory, brief: PolitilyBrief, storyLink: string) 
         <p style="letter-spacing:.12em;text-transform:uppercase;color:#6b665d;font-size:12px;">Politily Signal</p>
         <h1 style="font-size:26px;line-height:1.2;margin:0 0 12px;">${escapeHtml(brief.briefTitle)}</h1>
         <p style="font-size:18px;line-height:1.55;margin:0 0 20px;">${escapeHtml(brief.hook)}</p>
-        <p><strong>Score:</strong> ${story.totalScore}/100</p>
+        <p><strong>Score:</strong> ${story.totalScore}/100 ${typeof brief.researchDepthScore === "number" ? `| <strong>Research depth:</strong> ${brief.researchDepthScore}/100` : ""}</p>
         <p>${escapeHtml(brief.whatHappened)}</p>
         <h2>Why it matters</h2>
         <p>${escapeHtml(brief.whyItMatters)}</p>
         <h2>Context</h2>
         <p>${escapeHtml(brief.historicalContext)}</p>
         <p>${escapeHtml(brief.geographicalContext)}</p>
+        <h2>Institutional accountability</h2>
+        <p>${escapeHtml(brief.institutionalContext || "Regenerate this brief to get institutional accountability context.")}</p>
+        ${dataPoints ? `<h2>Data points</h2><ul>${dataPoints}</ul>` : ""}
+        ${questions ? `<h2>Hard research questions</h2><ul>${questions}</ul>` : ""}
         <h2>Facts and figures</h2>
         <ul>${facts}</ul>
+        ${sourcePositions ? `<h2>Source positions</h2><ul>${sourcePositions}</ul>` : ""}
         <h2>What happens next</h2>
         <ul>${next}</ul>
-        <h2>Creator script</h2>
+        <h2>Roman Hindi creator script</h2>
         <pre style="white-space:pre-wrap;background:#fffdfa;border:1px solid #d9d3c3;padding:16px;border-radius:8px;">${escapeHtml(
           brief.videoScript
         )}</pre>
@@ -85,6 +93,7 @@ function buildText(story: StoredStory, brief: PolitilyBrief, storyLink: string) 
 ${brief.hook}
 
 Score: ${story.totalScore}/100
+Research depth: ${typeof brief.researchDepthScore === "number" ? `${brief.researchDepthScore}/100` : "Regenerate for depth score"}
 
 What happened:
 ${brief.whatHappened}
@@ -95,7 +104,19 @@ ${brief.whyItMatters}
 Historical context:
 ${brief.historicalContext}
 
-Script:
+Institutional accountability:
+${brief.institutionalContext || "Regenerate this brief to get institutional accountability context."}
+
+Data points:
+${(brief.dataPoints ?? []).join("\n")}
+
+Hard research questions:
+${(brief.researchQuestions ?? []).join("\n")}
+
+Source positions:
+${(brief.sourcePositions ?? []).join("\n")}
+
+Roman Hindi script:
 ${brief.videoScript}
 
 Sources:
