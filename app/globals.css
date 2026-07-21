@@ -1845,15 +1845,13 @@ select:focus-visible {
   }
 
   .selected-story-footer {
-    border-bottom: 0;
-    border-left: 0;
-    border-radius: 8px 8px 0 0;
-    border-right: 0;
-    bottom: 0;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    bottom: 22px;
     grid-template-columns: minmax(0, 1fr) auto;
-    left: 0;
-    padding: 10px 12px 12px;
-    right: 0;
+    left: 10px;
+    padding: 10px 10px;
+    right: 10px;
   }
 
   .selected-story-copy strong {

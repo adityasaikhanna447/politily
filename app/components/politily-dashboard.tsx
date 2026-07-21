@@ -124,6 +124,7 @@ const SCORE_EXPLAINERS: Record<ScoreKey, { label: string; method: string }> = {
 
 const MIN_VISIBLE_STORY_DATE = Date.parse("2026-07-20T00:00:00+05:30");
 const MIN_VISIBLE_STORY_LABEL = "20 Jul 2026";
+const SHOW_STORY_IMAGES = false;
 
 export function PolitilyDashboard() {
   const [state, setState] = useState<DashboardState | null>(null);
@@ -511,7 +512,7 @@ function OverviewDesk({
   return (
     <div className="overview-grid">
       {leadStory ? (
-        <section className={`panel lead-story span-2 ${leadStory.imageUrl ? "" : "no-media"}`}>
+        <section className={`panel lead-story span-2 ${shouldShowStoryImage(leadStory) ? "" : "no-media"}`}>
           <div className="lead-copy">
             <span className="section-chip">Lead video candidate</span>
             <h1>{leadStory.title}</h1>
@@ -530,7 +531,7 @@ function OverviewDesk({
               </button>
             </div>
           </div>
-          {leadStory.imageUrl ? <StoryImage story={leadStory} variant="hero" /> : null}
+          {shouldShowStoryImage(leadStory) ? <StoryImage story={leadStory} variant="hero" /> : null}
         </section>
       ) : null}
 
@@ -590,7 +591,7 @@ function OverviewDesk({
         <div className="compact-story-list">
           {topStories.map((story) => (
             <div className="compact-story" key={story.id}>
-              {story.imageUrl ? <StoryImage story={story} variant="mini" /> : null}
+              {shouldShowStoryImage(story) ? <StoryImage story={story} variant="mini" /> : null}
               <div>
                 <strong>{story.title}</strong>
                 <p>{story.newsSnippet}</p>
@@ -751,7 +752,7 @@ function IssueClusterCard({
   const briefState = briefStateLabel(lead);
 
   return (
-    <button className={`story-post issue-card ${active ? "active" : ""} ${lead.imageUrl ? "" : "no-media"}`} onClick={() => onSelect(lead.id)} type="button">
+    <button className={`story-post issue-card ${active ? "active" : ""} ${shouldShowStoryImage(lead) ? "" : "no-media"}`} onClick={() => onSelect(lead.id)} type="button">
       <div className="issue-card-top">
         <div className="issue-card-labels">
           <span className="source-pill">{cluster.topic.label}</span>
@@ -762,7 +763,7 @@ function IssueClusterCard({
           <span>/100</span>
         </strong>
       </div>
-      {lead.imageUrl ? <StoryImage story={lead} variant="thumb" /> : null}
+      {shouldShowStoryImage(lead) ? <StoryImage story={lead} variant="thumb" /> : null}
       <div className="story-post-body">
         <h3>{cluster.label}</h3>
         <p>{lead.newsSnippet}</p>
@@ -851,16 +852,20 @@ function briefStateLabel(story: EnrichedStory) {
   return "Brief ready";
 }
 
+function shouldShowStoryImage(story: EnrichedStory) {
+  return SHOW_STORY_IMAGES && Boolean(story.imageUrl);
+}
+
 function StoryImage({ story, variant = "thumb" }: { story: EnrichedStory; variant?: "hero" | "thumb" | "mini" | "dossier" }) {
   const [failed, setFailed] = useState(false);
   const label = story.topics[0]?.label || "Politics";
-  if (!story.imageUrl || failed) {
+  if (!shouldShowStoryImage(story) || failed) {
     return null;
   }
 
   return (
     <div className={`story-image story-image-${variant}`}>
-      <img alt="" loading="lazy" onError={() => setFailed(true)} src={story.imageUrl} />
+      <img alt="" loading="lazy" onError={() => setFailed(true)} src={story.imageUrl || ""} />
       <div className="image-overlay">
         <span>{label}</span>
         <strong>{story.reachScore}/100</strong>
@@ -889,8 +894,8 @@ function StoryDossier({
 
   return (
     <div>
-      <div className={`dossier-head ${story.imageUrl ? "" : "no-media"}`}>
-        {story.imageUrl ? <StoryImage story={story} variant="dossier" /> : null}
+      <div className={`dossier-head ${shouldShowStoryImage(story) ? "" : "no-media"}`}>
+        {shouldShowStoryImage(story) ? <StoryImage story={story} variant="dossier" /> : null}
         <div>
           <span className="section-chip">Selected issue</span>
           <h2>{cluster?.label || story.title}</h2>
@@ -975,8 +980,8 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
   return (
     <section className="brief-grid">
       <div className="panel span-2">
-        <div className={`brief-story-context ${story.imageUrl ? "" : "no-media"}`}>
-          {story.imageUrl ? <StoryImage story={story} variant="dossier" /> : null}
+        <div className={`brief-story-context ${shouldShowStoryImage(story) ? "" : "no-media"}`}>
+          {shouldShowStoryImage(story) ? <StoryImage story={story} variant="dossier" /> : null}
           <div>
             <span className="section-chip">Original signal</span>
             <strong>{story.title}</strong>
