@@ -24,6 +24,7 @@ export interface RuntimeEnv {
   POLITILY_MAX_SOURCES_PER_RUN?: string;
   POLITILY_FETCH_TIMEOUT_MS?: string;
   POLITILY_MIN_STORY_DATE?: string;
+  POLITILY_MAX_MEDIA_FETCHES_PER_RUN?: string;
 }
 
 export interface SignalSource {
@@ -128,6 +129,12 @@ export interface PolitilyBrief {
   cta: string;
   caution: string;
   citedUrls: string[];
+  tokenUsage?: {
+    promptTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    model?: string;
+  };
   generatedBy: "gemini" | "template";
   generatedAt: string;
 }

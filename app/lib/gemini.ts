@@ -6,6 +6,11 @@ interface GeminiGenerateContentResponse {
       parts?: Array<{ text?: string }>;
     };
   }>;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  };
 }
 
 interface SourceContext {
@@ -95,6 +100,12 @@ export async function generateBriefWithGemini(
         .concat(compactSources.map((link) => link.url))
         .concat(sourceContexts.map((context) => context.url))
     ).slice(0, 12),
+    tokenUsage: {
+      promptTokens: normaliseOptionalNumber(payload.usageMetadata?.promptTokenCount),
+      outputTokens: normaliseOptionalNumber(payload.usageMetadata?.candidatesTokenCount),
+      totalTokens: normaliseOptionalNumber(payload.usageMetadata?.totalTokenCount),
+      model,
+    },
     generatedBy: "gemini",
     generatedAt: new Date().toISOString(),
   };
@@ -374,6 +385,12 @@ function templateBrief(
     caution:
       "Do not publish allegations as facts. Separate confirmed records, reported claims, and political spin.",
     citedUrls,
+    tokenUsage: {
+      promptTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      model: "template-fallback",
+    },
     generatedBy: "template",
     generatedAt: new Date().toISOString(),
   };
@@ -611,6 +628,11 @@ function normaliseScore(value: unknown, fallback: number) {
   }
 
   return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
+function normaliseOptionalNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function normaliseScoreRationale(value: unknown): PolitilyBrief["scoreRationale"] {

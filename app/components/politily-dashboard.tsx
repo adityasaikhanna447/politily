@@ -28,6 +28,18 @@ interface EnrichedStory extends StoredStory {
   verificationState: string;
 }
 
+interface IssueCluster {
+  id: string;
+  label: string;
+  topic: TopicRule;
+  lead: EnrichedStory;
+  stories: EnrichedStory[];
+  sources: string[];
+  sourceLinks: StorySourceLink[];
+  reachScore: number;
+  latestAt: string;
+}
+
 const TOPIC_RULES: TopicRule[] = [
   {
     id: "election",
@@ -209,6 +221,7 @@ export function PolitilyDashboard() {
   const latestRun = state?.runs[0];
   const triggeredCount = enrichedStories.filter((story) => story.totalScore >= (state?.config.threshold ?? 72)).length;
   const briefedCount = enrichedStories.filter((story) => story.brief).length;
+  const tokenTotal = sumBriefTokens(enrichedStories);
 
   const filteredStories = useMemo(() => {
     const cleanedQuery = query.trim().toLowerCase();
@@ -308,7 +321,7 @@ export function PolitilyDashboard() {
           <span>Since {MIN_VISIBLE_STORY_LABEL}</span>
           <strong>{enrichedStories.length} signals</strong>
           <strong>{portalNames.length} portals</strong>
-          <strong>{triggeredCount} priority</strong>
+          <strong>{formatTokens(tokenTotal)} tokens</strong>
         </div>
 
         <section className="kpi-grid">
@@ -316,7 +329,7 @@ export function PolitilyDashboard() {
           <Kpi tone="orange" label="Triggered" value={triggeredCount} sub={`threshold ${state?.config.threshold ?? 72}`} />
           <Kpi tone="green" label="Briefs" value={briefedCount} sub="generated" />
           <Kpi tone="blue" label="Portals" value={portalNames.length} sub={`visible since ${MIN_VISIBLE_STORY_LABEL}`} />
-          <Kpi tone="purple" label="Gemini" value={state?.config.geminiReady ? "Ready" : "Missing"} sub={state?.config.model ?? "model"} />
+          <Kpi tone="purple" label="Gemini tokens" value={formatTokens(tokenTotal)} sub="brief generation only" />
           <Kpi tone="red" label="Email" value={state?.config.emailReady ? "Ready" : "Pending"} sub="Resend domain" />
         </section>
 
@@ -405,9 +418,7 @@ function SelectedStoryFooter({
       <div className="selected-story-copy">
         <span>Brief target</span>
         <strong>{story.title}</strong>
-        <small>
-          {story.sourceName} · {story.reachScore}/100 · {story.sourceDiversity} source{story.sourceDiversity === 1 ? "" : "s"}
-        </small>
+        <small>{story.sourceName} - {story.reachScore}/100 - {briefTokenLabel(story.brief)}</small>
       </div>
       <div className="selected-story-actions">
         <button className="btn btn-gold" disabled={busy} onClick={() => onGenerate(story.id)} type="button">
@@ -443,7 +454,7 @@ function OverviewDesk({
   return (
     <div className="overview-grid">
       {leadStory ? (
-        <section className="panel lead-story span-2">
+        <section className={`panel lead-story span-2 ${leadStory.imageUrl ? "" : "no-media"}`}>
           <div className="lead-copy">
             <span className="section-chip">Lead video candidate</span>
             <h1>{leadStory.title}</h1>
@@ -462,7 +473,7 @@ function OverviewDesk({
               </button>
             </div>
           </div>
-          <StoryImage story={leadStory} variant="hero" />
+          {leadStory.imageUrl ? <StoryImage story={leadStory} variant="hero" /> : null}
         </section>
       ) : null}
 
@@ -522,7 +533,7 @@ function OverviewDesk({
         <div className="compact-story-list">
           {topStories.map((story) => (
             <div className="compact-story" key={story.id}>
-              <StoryImage story={story} variant="mini" />
+              {story.imageUrl ? <StoryImage story={story} variant="mini" /> : null}
               <div>
                 <strong>{story.title}</strong>
                 <p>{story.newsSnippet}</p>
@@ -569,6 +580,11 @@ function WatchDesk({
   busy: boolean;
   onGenerate: (storyId: string) => void;
 }) {
+  const clusters = useMemo(() => buildIssueClusters(stories), [stories]);
+  const selectedCluster = selectedStory
+    ? clusters.find((cluster) => cluster.stories.some((story) => story.id === selectedStory.id))
+    : clusters[0];
+
   return (
     <div className="watch-grid">
       <section className="panel feed-panel">
@@ -591,11 +607,16 @@ function WatchDesk({
             </button>
           ))}
         </div>
-        <div className="story-feed">
-          {stories.map((story) => (
-            <StoryCard active={story.id === selectedStory?.id} key={story.id} onSelect={onSelect} story={story} />
+        <div className="story-feed issue-feed">
+          {clusters.map((cluster) => (
+            <IssueClusterCard
+              active={cluster.id === selectedCluster?.id}
+              cluster={cluster}
+              key={cluster.id}
+              onSelect={onSelect}
+            />
           ))}
-          {!stories.length ? <div className="empty-state">No stories match this search or topic filter.</div> : null}
+          {!clusters.length ? <div className="empty-state">No issue clusters match this search or topic filter.</div> : null}
         </div>
       </section>
 
@@ -603,6 +624,7 @@ function WatchDesk({
         {selectedStory ? (
           <StoryDossier
             busy={busy}
+            cluster={selectedCluster}
             onGenerate={onGenerate}
             onScoreFocus={onScoreFocus}
             scoreFocus={scoreFocus}
@@ -616,20 +638,36 @@ function WatchDesk({
   );
 }
 
-function StoryCard({ story, active, onSelect }: { story: EnrichedStory; active: boolean; onSelect: (id: string) => void }) {
+function IssueClusterCard({
+  cluster,
+  active,
+  onSelect,
+}: {
+  cluster: IssueCluster;
+  active: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const lead = cluster.lead;
+
   return (
-    <button className={`story-post ${active ? "active" : ""}`} onClick={() => onSelect(story.id)} type="button">
-      <StoryImage story={story} variant="thumb" />
+    <button className={`story-post issue-card ${active ? "active" : ""}`} onClick={() => onSelect(lead.id)} type="button">
+      {lead.imageUrl ? <StoryImage story={lead} variant="thumb" /> : null}
       <div className="story-post-body">
         <div className="post-source-row">
-          <span className="source-pill">{story.sourceName}</span>
-          <span>{formatRelativeDate(story.publishedAt || story.detectedAt)}</span>
+          <span className="source-pill">{cluster.topic.label}</span>
+          <span>{formatRelativeDate(cluster.latestAt)}</span>
         </div>
-        <h3>{story.title}</h3>
-        <p>{story.newsSnippet}</p>
+        <h3>{cluster.label}</h3>
+        <p>{lead.newsSnippet}</p>
+        <div className="issue-source-strip">
+          {cluster.sources.slice(0, 5).map((source) => (
+            <span key={source}>{source}</span>
+          ))}
+          {cluster.sources.length > 5 ? <strong>+{cluster.sources.length - 5}</strong> : null}
+        </div>
         <div className="post-signal-line">
-          <strong>{story.sourceDiversity} source{story.sourceDiversity === 1 ? "" : "s"}</strong>
-          <span>{story.verificationState}</span>
+          <strong>{cluster.sources.length} source{cluster.sources.length === 1 ? "" : "s"}</strong>
+          <span>{cluster.stories.length} report{cluster.stories.length === 1 ? "" : "s"} · {cluster.reachScore}/100 reach</span>
         </div>
       </div>
     </button>
@@ -639,17 +677,13 @@ function StoryCard({ story, active, onSelect }: { story: EnrichedStory; active: 
 function StoryImage({ story, variant = "thumb" }: { story: EnrichedStory; variant?: "hero" | "thumb" | "mini" | "dossier" }) {
   const [failed, setFailed] = useState(false);
   const label = story.topics[0]?.label || "Politics";
-  const initials = storyInitials(story);
+  if (!story.imageUrl || failed) {
+    return null;
+  }
 
   return (
     <div className={`story-image story-image-${variant}`}>
-      {story.imageUrl && !failed ? (
-        <img alt="" loading="lazy" onError={() => setFailed(true)} src={story.imageUrl} />
-      ) : (
-        <div className="image-fallback">
-          <strong>{initials}</strong>
-        </div>
-      )}
+      <img alt="" loading="lazy" onError={() => setFailed(true)} src={story.imageUrl} />
       <div className="image-overlay">
         <span>{label}</span>
         <strong>{story.reachScore}/100</strong>
@@ -660,28 +694,37 @@ function StoryImage({ story, variant = "thumb" }: { story: EnrichedStory; varian
 
 function StoryDossier({
   story,
+  cluster,
   scoreFocus,
   onScoreFocus,
   busy,
   onGenerate,
 }: {
   story: EnrichedStory;
+  cluster?: IssueCluster;
   scoreFocus: ScoreKey;
   onScoreFocus: (value: ScoreKey) => void;
   busy: boolean;
   onGenerate: (storyId: string) => void;
 }) {
   const explainer = scoreExplainer(story, scoreFocus);
+  const sourceTrail = cluster?.sourceLinks.length ? cluster.sourceLinks : uniqueStoryLinks(story.sourceLinks ?? []);
 
   return (
     <div>
-      <div className="dossier-head">
-        <StoryImage story={story} variant="dossier" />
+      <div className={`dossier-head ${story.imageUrl ? "" : "no-media"}`}>
+        {story.imageUrl ? <StoryImage story={story} variant="dossier" /> : null}
         <div>
-          <span className="section-chip">Selected story</span>
-          <h2>{story.title}</h2>
+          <span className="section-chip">Selected issue</span>
+          <h2>{cluster?.label || story.title}</h2>
           <p>{story.whatHappenedShort}</p>
           <p className="snippet-copy">{story.newsSnippet}</p>
+          {cluster ? (
+            <div className="issue-proof-row">
+              <strong>{cluster.sources.length} sources</strong>
+              <span>{cluster.stories.length} related reports grouped under this issue</span>
+            </div>
+          ) : null}
         </div>
         <div className="reach-box">
           <strong>{story.reachScore}</strong>
@@ -717,11 +760,11 @@ function StoryDossier({
       <div className="insight-grid">
         <ResearchTile label="Video angle" value={story.videoAngle} />
         <ResearchTile label="Verification state" value={story.verificationState} />
-        <ResearchTile label="Source priority" value={story.sourcePriority === null ? "Media/domain source" : `${story.sourcePriority}/100`} />
+        <ResearchTile label="Token use" value={briefTokenLabel(story.brief)} />
         <ResearchTile label="Audience reach why" value={story.reachReason} />
       </div>
 
-      <SourceTrail links={uniqueStoryLinks(story.sourceLinks ?? [])} />
+      <SourceTrail links={sourceTrail} />
     </div>
   );
 }
@@ -755,8 +798,8 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
   return (
     <section className="brief-grid">
       <div className="panel span-2">
-        <div className="brief-story-context">
-          <StoryImage story={story} variant="dossier" />
+        <div className={`brief-story-context ${story.imageUrl ? "" : "no-media"}`}>
+          {story.imageUrl ? <StoryImage story={story} variant="dossier" /> : null}
           <div>
             <span className="section-chip">Original signal</span>
             <strong>{story.title}</strong>
@@ -776,6 +819,7 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
         <div className="insight-grid">
           <ResearchTile label="Audience reach" value={`${brief.audienceReachScore ?? story.reachScore}/100 - ${brief.audienceReachReason || story.reachReason}`} />
           <ResearchTile label="Evidence grade" value={brief.evidenceGrade} />
+          <ResearchTile label="Gemini tokens" value={briefTokenLabel(brief)} />
           <ResearchTile label="Source confidence" value={brief.sourceConfidence} />
           <ResearchTile label="Caution" value={brief.caution} />
         </div>
@@ -857,6 +901,8 @@ function SourceDesk({ sources, sourceMix }: { sources: SignalSource[]; sourceMix
 }
 
 function SetupDesk({ state, latestRun }: { state: DashboardState; latestRun: DashboardState["runs"][number] | undefined }) {
+  const tokenTotal = sumBriefTokens(state.stories.filter(isDisplayableStory).filter(isOnOrAfterVisibleStartDate).map((story) => enrichStory(story, state.sources)));
+
   return (
     <section className="setup-grid">
       <div className="panel">
@@ -864,6 +910,7 @@ function SetupDesk({ state, latestRun }: { state: DashboardState; latestRun: Das
         <div className="strategy-stack">
           <StrategyRow label="D1 database" value={state.config.storageReady ? "Ready. 4 tables is correct." : "Missing."} />
           <StrategyRow label="Gemini" value={state.config.geminiReady ? `Ready: ${state.config.model}` : "Missing API key."} />
+          <StrategyRow label="Token policy" value={`Scanning uses RSS/GDELT/open pages: 0 Gemini tokens. Generated briefs recorded so far: ${formatTokens(tokenTotal)} tokens.`} />
           <StrategyRow label="Email" value={state.config.emailReady ? "Ready." : "Pending. Resend domain/API still needed."} />
           <StrategyRow label="Cron" value="Cloudflare schedule runs every 15 minutes. Cloudflare UI shows UTC, app shows IST." />
         </div>
@@ -940,7 +987,7 @@ function ListPanel({ title, items }: { title: string; items: string[] }) {
 function SourceTrail({ links }: { links: StorySourceLink[] }) {
   return (
     <div className="source-trail">
-      <PanelTitle title="Source trail" />
+      <PanelTitle title="Issue source proof" />
       {links.length ? (
         links.slice(0, 8).map((link) => (
           <a href={link.url} key={`${link.sourceName}-${link.url}`} rel="noreferrer" target="_blank">
@@ -1030,6 +1077,127 @@ function buildPortalNames(stories: EnrichedStory[]) {
   return Array.from(names).sort((left, right) => left.localeCompare(right));
 }
 
+function buildIssueClusters(stories: EnrichedStory[]) {
+  const clusters: IssueCluster[] = [];
+  const sorted = stories.slice().sort((left, right) => compareStories(left, right, "rank"));
+
+  sorted.forEach((story) => {
+    const key = issueKey(story);
+    const match =
+      clusters.find((cluster) => cluster.id === key) ||
+      clusters.find((cluster) => storyIssueSimilarity(story, cluster.lead) >= 0.62);
+
+    if (match) {
+      match.stories.push(story);
+      match.sources = uniqueStrings([...match.sources, ...story.sourceNames]);
+      match.sourceLinks = uniqueStoryLinks(match.sourceLinks.concat(story.sourceLinks ?? []));
+      match.reachScore = Math.max(match.reachScore, story.reachScore);
+      match.latestAt = dateValue(story.detectedAt) > dateValue(match.latestAt) ? story.detectedAt : match.latestAt;
+      if (story.reachScore > match.lead.reachScore) {
+        match.lead = story;
+        match.label = issueLabel(story);
+      }
+      return;
+    }
+
+    clusters.push({
+      id: key,
+      label: issueLabel(story),
+      topic: story.topics[0] ?? TOPIC_RULES[0],
+      lead: story,
+      stories: [story],
+      sources: story.sourceNames,
+      sourceLinks: uniqueStoryLinks(story.sourceLinks ?? []),
+      reachScore: story.reachScore,
+      latestAt: story.detectedAt,
+    });
+  });
+
+  return clusters.sort((left, right) => right.reachScore - left.reachScore || dateValue(right.latestAt) - dateValue(left.latestAt));
+}
+
+function issueKey(story: EnrichedStory) {
+  const text = `${story.title} ${story.summary} ${story.tags.join(" ")}`.toLowerCase();
+  if (/cjp|cockroach janta party|chalo sansad|sansad chalo/.test(text)) {
+    return "issue:cjp-sansad-chalo";
+  }
+  if (/bankipur|bypoll|by-election|byelection/.test(text)) {
+    return "issue:bankipur-bypoll";
+  }
+  if (/jailed leaders|removing jailed leaders|130th constitutional|office.*jailed/.test(text)) {
+    return "issue:jailed-leaders-bill";
+  }
+  if (/rahul gandhi/.test(text)) {
+    return "issue:rahul-gandhi";
+  }
+
+  const topic = story.topics[0]?.id || "politics";
+  const keywords = issueTokens(story.title).slice(0, 5).join("-");
+  return `${topic}:${keywords || story.fingerprint}`;
+}
+
+function issueLabel(story: EnrichedStory) {
+  const text = `${story.title} ${story.summary}`.toLowerCase();
+  if (/cjp|cockroach janta party|chalo sansad|sansad chalo/.test(text)) {
+    return "CJP / Sansad Chalo protest";
+  }
+  if (/bankipur|bypoll|by-election|byelection/.test(text)) {
+    return "Bankipur bypoll and Bihar party strategy";
+  }
+  if (/jailed leaders|removing jailed leaders/.test(text)) {
+    return "Bill on jailed leaders holding office";
+  }
+
+  return removeSourceSuffix(story.title);
+}
+
+function storyIssueSimilarity(left: EnrichedStory, right: EnrichedStory) {
+  const leftTokens = new Set(issueTokens(left.title));
+  const rightTokens = new Set(issueTokens(right.title));
+  if (!leftTokens.size || !rightTokens.size) {
+    return 0;
+  }
+
+  const shared = Array.from(leftTokens).filter((token) => rightTokens.has(token)).length;
+  return shared / Math.max(leftTokens.size, rightTokens.size);
+}
+
+function issueTokens(value: string) {
+  const stopWords = new Set([
+    "about",
+    "after",
+    "against",
+    "amid",
+    "and",
+    "are",
+    "from",
+    "have",
+    "india",
+    "indian",
+    "into",
+    "news",
+    "over",
+    "that",
+    "the",
+    "this",
+    "what",
+    "when",
+    "where",
+    "with",
+    "why",
+  ]);
+
+  return cleanDisplayText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 3 && !stopWords.has(token));
+}
+
+function removeSourceSuffix(value: string) {
+  return cleanDisplayText(value).replace(/\s+-\s+[^-]{2,40}$/g, "");
+}
+
 function compareStories(left: EnrichedStory, right: EnrichedStory, sortKey: SortKey) {
   if (sortKey === "recent") {
     return dateValue(right.detectedAt) - dateValue(left.detectedAt);
@@ -1089,6 +1257,42 @@ function verificationState(story: StoredStory, sourceDiversity: number) {
   return "Thin. Do not rely on this alone.";
 }
 
+function sumBriefTokens(stories: EnrichedStory[]) {
+  return stories.reduce((sum, story) => sum + (story.brief?.tokenUsage?.totalTokens ?? 0), 0);
+}
+
+function briefTokenLabel(brief: StoredStory["brief"]) {
+  if (!brief) {
+    return "No Gemini tokens yet";
+  }
+
+  if (brief.generatedBy === "template") {
+    return "0 tokens - template";
+  }
+
+  const total = brief.tokenUsage?.totalTokens;
+  if (!total) {
+    return "Tokens unavailable";
+  }
+
+  const prompt = brief.tokenUsage?.promptTokens;
+  const output = brief.tokenUsage?.outputTokens;
+  const detail = prompt || output ? ` (${formatTokens(prompt ?? 0)} in / ${formatTokens(output ?? 0)} out)` : "";
+  return `${formatTokens(total)} tokens${detail}`;
+}
+
+function formatTokens(value: number) {
+  if (!value) {
+    return "0";
+  }
+
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`;
+  }
+
+  return String(value);
+}
+
 function cleanSummary(summary: string, story: StoredStory, maxLength = 230) {
   const value = cleanDisplayText(summary);
   if (!value || /^\d{8}T?\d*/.test(value)) {
@@ -1134,16 +1338,6 @@ function isOnOrAfterVisibleStartDate(story: StoredStory) {
   return !Number.isFinite(parsed) || parsed >= MIN_VISIBLE_STORY_DATE;
 }
 
-function storyInitials(story: StoredStory) {
-  const words = story.title
-    .replace(/[^a-z0-9\s]/gi, " ")
-    .split(/\s+/)
-    .filter((word) => word.length > 2)
-    .slice(0, 2);
-
-  return (words.map((word) => word[0]).join("") || "P").toUpperCase();
-}
-
 function isDisplayableStory(story: StoredStory) {
   const text = `${story.title} ${story.summary}`;
   if (/[\u0900-\u097f]/.test(text) || /[à¤à¥ÃÂâ]/.test(text)) {
@@ -1177,6 +1371,10 @@ function uniqueStoryLinks(links: StorySourceLink[]) {
   }
 
   return unique;
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.map(cleanDisplayText).filter(Boolean)));
 }
 
 function storyFromUrl() {

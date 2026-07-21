@@ -69,6 +69,8 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
     const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 8), 12);
     const fetchTimeoutMs = Math.min(numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 9000), 12000);
     const minStoryDate = minStoryDateEnv(env.POLITILY_MIN_STORY_DATE);
+    const maxMediaFetches = Math.min(numberEnv(env.POLITILY_MAX_MEDIA_FETCHES_PER_RUN, 6), 10);
+    let mediaFetches = 0;
     const scanDeadline = Date.now() + 42000;
     const sources = rotateSources(
       (await listSources(env.DB)).filter((source) => source.active)
@@ -108,9 +110,15 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
       scannedCount += signals.length;
       await updateSourceChecked(env.DB, source.id);
 
-      for (const signal of signals) {
+      for (const rawSignal of signals) {
+        let signal = rawSignal;
         if (isOlderThanMinimumDate(signal.publishedAt, minStoryDate)) {
           continue;
+        }
+
+        if (needsMediaHydration(signal) && mediaFetches < maxMediaFetches && Date.now() < scanDeadline - 3500) {
+          mediaFetches += 1;
+          signal = await hydrateSignalMedia(signal, Math.min(fetchTimeoutMs, 3200));
         }
 
         const fingerprint = fingerprintFor(signal);
@@ -208,7 +216,8 @@ export async function generateAndSaveBrief(env: RuntimeEnv, storyId: string) {
   }
 
   const sourceLinks = await listStorySources(env.DB, story.id);
-  const brief = await generateBriefWithGemini(env, story, sourceLinks);
+  const briefSources = await collectBriefSources(env.DB, story, sourceLinks);
+  const brief = await generateBriefWithGemini(env, story, briefSources);
   await saveBrief(env.DB, story.id, brief);
 
   return {
@@ -216,8 +225,65 @@ export async function generateAndSaveBrief(env: RuntimeEnv, storyId: string) {
     brief,
     scriptText: brief.videoScript,
     status: "briefed" as const,
-    sourceLinks,
+    sourceLinks: briefSources,
   };
+}
+
+async function collectBriefSources(
+  db: D1Database,
+  story: StoredStory,
+  sourceLinks: Awaited<ReturnType<typeof listStorySources>>
+) {
+  const recentStories = await listRecentStories(db, 120);
+  const relatedStories = recentStories
+    .filter((candidate) => candidate.id !== story.id && isRelatedForBrief(story, candidate))
+    .slice(0, 8);
+  const relatedLinks = relatedStories.map((candidate) => ({
+    id: `related_${candidate.id}`,
+    storyId: story.id,
+    title: candidate.title,
+    url: candidate.url,
+    sourceName: candidate.sourceName,
+    publishedAt: candidate.publishedAt,
+  }));
+
+  return uniqueBriefLinks(sourceLinks.concat(relatedLinks)).slice(0, 14);
+}
+
+function isRelatedForBrief(story: StoredStory, candidate: StoredStory) {
+  const storyText = `${story.title} ${story.summary}`.toLowerCase();
+  const candidateText = `${candidate.title} ${candidate.summary}`.toLowerCase();
+
+  if (
+    hasAny(storyText, ["cjp", "chalo sansad", "sansad chalo", "cockroach janta party"]) &&
+    hasAny(candidateText, ["cjp", "chalo sansad", "sansad chalo", "cockroach janta party"])
+  ) {
+    return true;
+  }
+
+  if (hasAny(storyText, ["bankipur", "bypoll", "by-election", "byelection"]) && hasAny(candidateText, ["bankipur", "bypoll", "by-election", "byelection"])) {
+    return true;
+  }
+
+  return titleSimilarity(story.title, candidate.title) >= 0.56;
+}
+
+function hasAny(text: string, terms: string[]) {
+  return terms.some((term) => text.includes(term));
+}
+
+function uniqueBriefLinks(links: Awaited<ReturnType<typeof listStorySources>>) {
+  const seen = new Set<string>();
+  const unique: Awaited<ReturnType<typeof listStorySources>> = [];
+  for (const link of links) {
+    const key = `${link.url}|${link.sourceName}`.toLowerCase();
+    if (!link.url || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(link);
+  }
+  return unique;
 }
 
 async function fetchSignals(source: SignalSource, timeoutMs: number): Promise<RawSignal[]> {
@@ -438,6 +504,66 @@ function parseHtmlPage(html: string, source: SignalSource): RawSignal[] {
     })
     .filter((signal): signal is RawSignal => Boolean(signal))
     .slice(0, 18);
+}
+
+async function hydrateSignalMedia(signal: RawSignal, timeoutMs: number): Promise<RawSignal> {
+  try {
+    const response = await fetchWithTimeout(signal.url, {
+      headers: {
+        Accept: "text/html,application/xhtml+xml,text/plain",
+        "User-Agent": "Politily/0.1 article-metadata-fetcher",
+      },
+    }, timeoutMs);
+
+    if (!response.ok) {
+      return signal;
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("text/html") && !contentType.includes("text/plain")) {
+      return signal;
+    }
+
+    const html = await response.text();
+    const imageUrl =
+      extractMetaContent(html, "property", "og:image") ||
+      extractMetaContent(html, "name", "twitter:image") ||
+      signal.imageUrl ||
+      null;
+    const description =
+      extractMetaContent(html, "property", "og:description") ||
+      extractMetaContent(html, "name", "description") ||
+      extractMetaContent(html, "name", "twitter:description") ||
+      signal.articleExcerpt ||
+      signal.summary;
+
+    const resolvedImageUrl = imageUrl ? resolveUrl(clean(imageUrl), new URL(response.url || signal.url)) || clean(imageUrl) : signal.imageUrl;
+
+    return {
+      ...signal,
+      imageUrl: resolvedImageUrl,
+      articleExcerpt: description ? clean(description) : signal.articleExcerpt,
+      summary: signal.summary || clean(description),
+    };
+  } catch {
+    return signal;
+  }
+}
+
+function needsMediaHydration(signal: RawSignal) {
+  return !signal.imageUrl || !signal.articleExcerpt || signal.articleExcerpt.length < 80;
+}
+
+function extractMetaContent(html: string, attr: "name" | "property", value: string) {
+  const pattern = new RegExp(
+    `<meta\\b(?=[^>]*\\b${attr}=["']${escapeRegex(value)}["'])(?=[^>]*\\bcontent=["']([^"']+)["'])[^>]*>`,
+    "i"
+  );
+  return html.match(pattern)?.[1] ?? "";
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function resolveUrl(value: string, baseUrl: URL) {
