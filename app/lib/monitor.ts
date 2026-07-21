@@ -130,6 +130,8 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
           title: signal.title,
           summary: signal.summary,
           url: signal.url,
+          imageUrl: signal.imageUrl ?? null,
+          articleExcerpt: signal.articleExcerpt || signal.summary,
           sourceName: signal.sourceName,
           sourceType: signal.sourceType,
           sourceCountry: signal.sourceCountry ?? "",
@@ -234,6 +236,8 @@ async function fetchSignals(source: SignalSource, timeoutMs: number): Promise<Ra
       title: clean(String(article.title ?? "")),
       summary: summariseGdeltArticle(article, source),
       url: String(article.url ?? ""),
+      imageUrl: clean(String(article.socialimage ?? article.image ?? "")) || null,
+      articleExcerpt: clean(String(article.title ?? "")),
       sourceName: clean(String(article.domain ?? source.name)),
       sourceType: source.type,
       sourceCountry: clean(String(article.sourcecountry ?? "")),
@@ -305,6 +309,7 @@ function parseFeed(xml: string, source: SignalSource): RawSignal[] {
       const title = clean(extractTag(entry, "title"));
       const summary = clean(extractTag(entry, "description") || extractTag(entry, "summary"));
       const link = clean(extractTag(entry, "link")) || extractHref(entry);
+      const imageUrl = extractImageUrl(entry);
       const sourceName = clean(extractTag(entry, "source")) || source.name;
       const publishedAt = parseDate(
         extractTag(entry, "pubDate") || extractTag(entry, "published") || extractTag(entry, "updated")
@@ -314,6 +319,8 @@ function parseFeed(xml: string, source: SignalSource): RawSignal[] {
         title,
         summary,
         url: link,
+        imageUrl,
+        articleExcerpt: summary || title,
         sourceName,
         sourceType: source.type,
         sourceCountry: source.region,
@@ -358,6 +365,33 @@ function extractHref(value: string) {
   return match?.[1] ?? "";
 }
 
+function extractImageUrl(value: string) {
+  const candidates = [
+    value.match(/<media:content[^>]+url=["']([^"']+)["']/i)?.[1],
+    value.match(/<media:thumbnail[^>]+url=["']([^"']+)["']/i)?.[1],
+    value.match(/<enclosure[^>]+url=["']([^"']+)["'][^>]*type=["']image\//i)?.[1],
+    value.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1],
+  ];
+
+  return clean(candidates.find(Boolean) ?? "") || null;
+}
+
+function extractImageNearLink(linkHtml: string, pageHtml: string, baseUrl: URL) {
+  const inlineImage = extractImageUrl(linkHtml);
+  if (inlineImage) {
+    return resolveUrl(inlineImage, baseUrl) || inlineImage;
+  }
+
+  const index = pageHtml.indexOf(linkHtml);
+  const nearby = index >= 0 ? pageHtml.slice(Math.max(0, index - 700), index + linkHtml.length + 700) : "";
+  const nearbyImage = nearby ? extractImageUrl(nearby) : null;
+  if (!nearbyImage) {
+    return null;
+  }
+
+  return resolveUrl(nearbyImage, baseUrl) || nearbyImage;
+}
+
 function parseHtmlPage(html: string, source: SignalSource): RawSignal[] {
   const withoutNoise = html
     .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
@@ -386,6 +420,8 @@ function parseHtmlPage(html: string, source: SignalSource): RawSignal[] {
         title,
         summary: `Official page item from ${source.name}. Verify the linked document before publication.`,
         url,
+        imageUrl: extractImageNearLink(match[0], withoutNoise, baseUrl),
+        articleExcerpt: `Official page item from ${source.name}. Verify the linked document before publication.`,
         sourceName: source.name,
         sourceType: source.type,
         sourceCountry: source.region,

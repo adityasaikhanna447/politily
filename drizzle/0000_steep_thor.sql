@@ -29,6 +29,8 @@ CREATE TABLE `stories` (
 	`title` text NOT NULL,
 	`summary` text DEFAULT '' NOT NULL,
 	`url` text NOT NULL,
+	`image_url` text,
+	`article_excerpt` text,
 	`source_name` text NOT NULL,
 	`source_type` text DEFAULT 'web' NOT NULL,
 	`source_country` text DEFAULT '' NOT NULL,

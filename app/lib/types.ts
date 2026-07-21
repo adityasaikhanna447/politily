@@ -42,6 +42,8 @@ export interface RawSignal {
   title: string;
   summary: string;
   url: string;
+  imageUrl?: string | null;
+  articleExcerpt?: string | null;
   sourceName: string;
   sourceType: SourceType;
   sourceCountry?: string;
@@ -66,6 +68,8 @@ export interface StoredStory extends StoryScores {
   title: string;
   summary: string;
   url: string;
+  imageUrl?: string | null;
+  articleExcerpt?: string | null;
   sourceName: string;
   sourceType: SourceType;
   sourceCountry: string;

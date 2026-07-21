@@ -20,6 +20,8 @@ export const stories = sqliteTable("stories", {
   title: text("title").notNull(),
   summary: text("summary").notNull().default(""),
   url: text("url").notNull(),
+  imageUrl: text("image_url"),
+  articleExcerpt: text("article_excerpt"),
   sourceName: text("source_name").notNull(),
   sourceType: text("source_type").notNull().default("web"),
   sourceCountry: text("source_country").notNull().default(""),

@@ -28,6 +28,8 @@ const schemaStatements = [
     title TEXT NOT NULL,
     summary TEXT NOT NULL DEFAULT '',
     url TEXT NOT NULL,
+    image_url TEXT,
+    article_excerpt TEXT,
     source_name TEXT NOT NULL,
     source_type TEXT NOT NULL DEFAULT 'web',
     source_country TEXT NOT NULL DEFAULT '',
@@ -76,6 +78,11 @@ const legacySourceIdsToPause = [
   "pib-feed-slot",
 ];
 
+const storyColumnMigrations = [
+  { name: "image_url", sql: "ALTER TABLE stories ADD COLUMN image_url TEXT" },
+  { name: "article_excerpt", sql: "ALTER TABLE stories ADD COLUMN article_excerpt TEXT" },
+];
+
 type Row = Record<string, unknown>;
 
 export function newId(prefix: string) {
@@ -85,7 +92,18 @@ export function newId(prefix: string) {
 
 export async function ensureDatabase(db: D1Database) {
   await db.batch(schemaStatements.map((statement) => db.prepare(statement)));
+  await migrateStoryColumns(db);
   await seedSources(db);
+}
+
+async function migrateStoryColumns(db: D1Database) {
+  const result = await db.prepare("PRAGMA table_info(stories)").all<Row>();
+  const columns = new Set(result.results.map((row) => String(row.name)));
+  const missing = storyColumnMigrations.filter((migration) => !columns.has(migration.name));
+
+  if (missing.length) {
+    await db.batch(missing.map((migration) => db.prepare(migration.sql)));
+  }
 }
 
 export async function markStaleRunsFailed(db: D1Database, olderThanMinutes = 10) {
@@ -255,11 +273,11 @@ export async function insertStory(db: D1Database, story: StoredStory) {
   await db
     .prepare(
       `INSERT OR IGNORE INTO stories
-      (id, fingerprint, title, summary, url, source_name, source_type,
+      (id, fingerprint, title, summary, url, image_url, article_excerpt, source_name, source_type,
        source_country, language, published_at, detected_at, tags_json,
        novelty_score, political_weight, geopolitical_relevance, viral_potential,
        total_score, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       story.id,
@@ -267,6 +285,8 @@ export async function insertStory(db: D1Database, story: StoredStory) {
       story.title,
       story.summary,
       story.url,
+      story.imageUrl ?? null,
+      story.articleExcerpt ?? null,
       story.sourceName,
       story.sourceType,
       story.sourceCountry,
@@ -429,6 +449,8 @@ function toStory(row: Row): StoredStory {
     title: String(row.title),
     summary: String(row.summary ?? ""),
     url: String(row.url),
+    imageUrl: row.image_url ? String(row.image_url) : null,
+    articleExcerpt: row.article_excerpt ? String(row.article_excerpt) : null,
     sourceName: String(row.source_name),
     sourceType: String(row.source_type) as StoredStory["sourceType"],
     sourceCountry: String(row.source_country ?? ""),

@@ -17,6 +17,7 @@ interface TopicRule {
 
 interface EnrichedStory extends StoredStory {
   topics: TopicRule[];
+  newsSnippet: string;
   whatHappenedShort: string;
   reachScore: number;
   reachReason: string;
@@ -379,10 +380,35 @@ function OverviewDesk({
   onTopicClick: (topicId: string) => void;
 }) {
   const topStories = stories.slice().sort((left, right) => right.reachScore - left.reachScore).slice(0, 4);
+  const leadStory = topStories[0] ?? stories[0];
   const urgent = stories.filter((story) => story.reachScore >= 72).length;
 
   return (
     <div className="overview-grid">
+      {leadStory ? (
+        <section className="panel lead-story span-2">
+          <div className="lead-copy">
+            <span className="section-chip">Lead video candidate</span>
+            <h1>{leadStory.title}</h1>
+            <p>{leadStory.newsSnippet}</p>
+            <div className="lead-meta-row">
+              <span>{leadStory.sourceName}</span>
+              <span>{formatRelativeDate(leadStory.publishedAt || leadStory.detectedAt)}</span>
+              <strong>{leadStory.reachScore}/100 reach</strong>
+            </div>
+            <div className="action-row">
+              <a className="btn btn-gold" href={leadStory.url} rel="noreferrer" target="_blank">
+                Open report
+              </a>
+              <button className="btn btn-ghost" onClick={() => onTopicClick(leadStory.topics[0]?.id || "all")} type="button">
+                View topic
+              </button>
+            </div>
+          </div>
+          <StoryImage story={leadStory} variant="hero" />
+        </section>
+      ) : null}
+
       <section className="panel span-2">
         <PanelTitle title="Topic distribution" />
         <div className="topic-grid">
@@ -429,9 +455,10 @@ function OverviewDesk({
         <div className="compact-story-list">
           {topStories.map((story) => (
             <div className="compact-story" key={story.id}>
+              <StoryImage story={story} variant="mini" />
               <div>
                 <strong>{story.title}</strong>
-                <p>{story.whatHappenedShort}</p>
+                <p>{story.newsSnippet}</p>
               </div>
               <span>{story.reachScore}/100</span>
             </div>
@@ -525,20 +552,42 @@ function WatchDesk({
 function StoryCard({ story, active, onSelect }: { story: EnrichedStory; active: boolean; onSelect: (id: string) => void }) {
   return (
     <button className={`story-post ${active ? "active" : ""}`} onClick={() => onSelect(story.id)} type="button">
-      <div className="post-meta">
-        <span>{story.sourceName}</span>
-        <span>{formatRelativeDate(story.publishedAt || story.detectedAt)}</span>
-      </div>
-      <h3>{story.title}</h3>
-      <p>{story.whatHappenedShort}</p>
-      <div className="post-tags">
-        {story.topics.slice(0, 3).map((topic) => <span key={topic.id}>{topic.label}</span>)}
-      </div>
-      <div className="post-footer">
-        <strong>{story.reachScore}/100 Indian reach</strong>
-        <span>{story.sourceDiversity} unique sources</span>
+      <StoryImage story={story} variant="thumb" />
+      <div className="story-post-body">
+        <div className="post-meta">
+          <span>{story.sourceName}</span>
+          <span>{formatRelativeDate(story.publishedAt || story.detectedAt)}</span>
+        </div>
+        <h3>{story.title}</h3>
+        <p>{story.newsSnippet}</p>
+        <div className="post-tags">
+          {story.topics.slice(0, 3).map((topic) => <span key={topic.id}>{topic.label}</span>)}
+        </div>
+        <div className="post-footer">
+          <strong>{story.reachScore}/100 Indian reach</strong>
+          <span>{story.sourceDiversity} unique sources</span>
+        </div>
       </div>
     </button>
+  );
+}
+
+function StoryImage({ story, variant = "thumb" }: { story: EnrichedStory; variant?: "hero" | "thumb" | "mini" | "dossier" }) {
+  const [failed, setFailed] = useState(false);
+  const label = story.topics[0]?.label || "Politics";
+  const initials = storyInitials(story);
+
+  return (
+    <div className={`story-image story-image-${variant}`}>
+      {story.imageUrl && !failed ? (
+        <img alt="" loading="lazy" onError={() => setFailed(true)} src={story.imageUrl} />
+      ) : (
+        <div className="image-fallback">
+          <span>{label}</span>
+          <strong>{initials}</strong>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -560,10 +609,12 @@ function StoryDossier({
   return (
     <div>
       <div className="dossier-head">
+        <StoryImage story={story} variant="dossier" />
         <div>
           <span className="section-chip">Selected story</span>
           <h2>{story.title}</h2>
           <p>{story.whatHappenedShort}</p>
+          <p className="snippet-copy">{story.newsSnippet}</p>
         </div>
         <div className="reach-box">
           <strong>{story.reachScore}</strong>
@@ -637,6 +688,14 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
   return (
     <section className="brief-grid">
       <div className="panel span-2">
+        <div className="brief-story-context">
+          <StoryImage story={story} variant="dossier" />
+          <div>
+            <span className="section-chip">Original signal</span>
+            <strong>{story.title}</strong>
+            <p>{story.newsSnippet}</p>
+          </div>
+        </div>
         <div className="brief-title-row">
           <div>
             <PanelTitle title="Brief and Hindi script" />
@@ -835,12 +894,14 @@ function enrichStory(story: StoredStory, sources: SignalSource[]): EnrichedStory
   const sourceNames = Array.from(new Set([story.sourceName, ...sourceLinks.map((link) => link.sourceName)].filter(Boolean)));
   const matchingSource = sources.find((source) => source.name.toLowerCase() === story.sourceName.toLowerCase());
   const reachScore = story.brief?.audienceReachScore ?? clamp(Math.round(story.totalScore * 0.72 + story.viralPotential * 0.18 + story.politicalWeight * 0.1));
+  const newsSnippet = cleanSummary(story.articleExcerpt || story.summary, story, 175);
 
   return {
     ...story,
     topics,
     sourceLinks,
-    whatHappenedShort: cleanSummary(story.brief?.whatHappened || story.summary, story),
+    newsSnippet,
+    whatHappenedShort: cleanSummary(story.brief?.whatHappened || story.articleExcerpt || story.summary, story),
     reachScore,
     reachReason: story.brief?.audienceReachReason || reachReason(story, reachScore),
     sourceNames,
@@ -940,13 +1001,23 @@ function verificationState(story: StoredStory, sourceDiversity: number) {
   return "Thin. Do not rely on this alone.";
 }
 
-function cleanSummary(summary: string, story: StoredStory) {
+function cleanSummary(summary: string, story: StoredStory, maxLength = 230) {
   const value = summary?.trim();
   if (!value || /^\d{8}T?\d*/.test(value)) {
     return `A political signal was detected from ${story.sourceName}. Open the source trail and generate a brief before treating it as publishable.`;
   }
 
-  return value.length > 230 ? `${value.slice(0, 227)}...` : value;
+  return value.length > maxLength ? `${value.slice(0, Math.max(0, maxLength - 3))}...` : value;
+}
+
+function storyInitials(story: StoredStory) {
+  const words = story.title
+    .replace(/[^a-z0-9\s]/gi, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 2)
+    .slice(0, 2);
+
+  return (words.map((word) => word[0]).join("") || "P").toUpperCase();
 }
 
 function isDisplayableStory(story: StoredStory) {

@@ -93,6 +93,90 @@ export const DEFAULT_SOURCES: SignalSource[] = [
     active: true,
   },
   {
+    id: "google-news-bbc-india-politics",
+    name: "BBC India Politics",
+    type: "rss",
+    url: googleNewsRss(
+      'site:bbc.com/news India politics BJP election protest parliament court policy'
+    ),
+    region: "india/global",
+    category: "International newsroom triangulation",
+    priority: 97,
+    active: true,
+  },
+  {
+    id: "google-news-aljazeera-india-politics",
+    name: "Al Jazeera India Politics",
+    type: "rss",
+    url: googleNewsRss(
+      'site:aljazeera.com India politics BJP election protest Kashmir parliament court'
+    ),
+    region: "india/global",
+    category: "International newsroom triangulation",
+    priority: 96,
+    active: true,
+  },
+  {
+    id: "google-news-toi-politics",
+    name: "Times of India Politics",
+    type: "rss",
+    url: googleNewsRss(
+      'site:timesofindia.indiatimes.com India politics BJP election protest bypoll parliament'
+    ),
+    region: "india",
+    category: "National newsroom triangulation",
+    priority: 96,
+    active: true,
+  },
+  {
+    id: "google-news-economic-times-politics",
+    name: "Economic Times Politics",
+    type: "rss",
+    url: googleNewsRss(
+      'site:economictimes.indiatimes.com/news/politics-and-nation BJP election protest policy parliament India'
+    ),
+    region: "india",
+    category: "National newsroom triangulation",
+    priority: 95,
+    active: true,
+  },
+  {
+    id: "google-news-india-today-aajtak-network",
+    name: "India Today / Aaj Tak Network",
+    type: "rss",
+    url: googleNewsRss(
+      '(site:indiatoday.in OR site:aajtak.in) India politics BJP election protest parliament bypoll'
+    ),
+    region: "india",
+    category: "National newsroom triangulation",
+    priority: 95,
+    active: true,
+  },
+  {
+    id: "google-news-pti-uni-wire",
+    name: "PTI / UNI Wire Mentions",
+    type: "rss",
+    url: googleNewsRss(
+      '(PTI OR "Press Trust of India" OR UNI OR "United News of India") India politics BJP election protest parliament court'
+    ),
+    region: "india",
+    category: "Agency wire verification",
+    priority: 95,
+    active: true,
+  },
+  {
+    id: "google-news-hindu-indian-express",
+    name: "The Hindu / Indian Express Politics",
+    type: "rss",
+    url: googleNewsRss(
+      '(site:thehindu.com OR site:indianexpress.com) India politics BJP election protest parliament court policy'
+    ),
+    region: "india",
+    category: "National newsroom triangulation",
+    priority: 94,
+    active: true,
+  },
+  {
     id: "gdelt-india-war-room",
     name: "India Political War Room",
     type: "gdelt",
@@ -109,7 +193,7 @@ export const DEFAULT_SOURCES: SignalSource[] = [
     name: "Agencies + National Media Sweep",
     type: "gdelt",
     url: gdeltUrl(
-      `${indiaCoreTerms} (PTI OR ANI OR Reuters OR "Associated Press" OR BBC OR "The Hindu" OR "Indian Express" OR NDTV OR "Hindustan Times" OR "Times of India" OR Scroll OR "The Wire")`
+      `${indiaCoreTerms} (PTI OR UNI OR ANI OR Reuters OR "Associated Press" OR BBC OR "Al Jazeera" OR "The Hindu" OR "Indian Express" OR NDTV OR "Hindustan Times" OR "Times of India" OR "Economic Times" OR "Aaj Tak" OR "India Today" OR Scroll OR "The Wire")`
     ),
     region: "india/global",
     category: "Agency and media triangulation",
@@ -121,7 +205,7 @@ export const DEFAULT_SOURCES: SignalSource[] = [
     name: "PTI, ANI, Reuters, AP Watch",
     type: "gdelt",
     url: gdeltUrl(
-      `${indiaCoreTerms} (PTI OR ANI OR Reuters OR "Associated Press" OR "Press Trust of India")`
+      `${indiaCoreTerms} (PTI OR UNI OR ANI OR Reuters OR "Associated Press" OR "Press Trust of India" OR "United News of India")`
     ),
     region: "india/global",
     category: "Agency wire verification",

@@ -133,7 +133,9 @@ Priority rules:
 Story:
 Title: ${story.title}
 Summary: ${story.summary}
+News snippet/article excerpt: ${story.articleExcerpt || story.summary || "No article excerpt stored yet."}
 Primary URL: ${story.url}
+Image/thumbnail URL: ${story.imageUrl || "No image captured."}
 Source: ${story.sourceName}
 Country/language: ${story.sourceCountry || "unknown"} / ${story.language || "unknown"}
 Scores: novelty ${story.noveltyScore}, political weight ${story.politicalWeight}, geopolitical relevance ${story.geopoliticalRelevance}, viral potential ${story.viralPotential}, total ${story.totalScore}
@@ -297,7 +299,7 @@ function templateBrief(
   const strongestContext = sourceContexts[0];
   const contextLead = strongestContext
     ? `${strongestContext.sourceName} page indicates: ${strongestContext.excerpt.slice(0, 520)}`
-    : story.summary || `A political signal was detected from ${story.sourceName}.`;
+    : story.articleExcerpt || story.summary || `A political signal was detected from ${story.sourceName}.`;
   const inferredTopic = inferStoryTopic(story);
 
   return {
