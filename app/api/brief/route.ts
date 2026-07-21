@@ -1,18 +1,20 @@
 import { env } from "cloudflare:workers";
-import { generateAndSaveBrief, loadDashboardState } from "../../lib/monitor";
+import { generateAndSaveBrief, generateResearchBriefForQuery, loadDashboardState } from "../../lib/monitor";
 import type { RuntimeEnv } from "../../lib/types";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { storyId?: string };
-    if (!body.storyId) {
-      return Response.json({ error: "storyId is required" }, { status: 400 });
+    const body = (await request.json()) as { storyId?: string; query?: string };
+    if (!body.storyId && !body.query?.trim()) {
+      return Response.json({ error: "storyId or query is required" }, { status: 400 });
     }
 
     const runtimeEnv = env as unknown as RuntimeEnv;
-    const story = await generateAndSaveBrief(runtimeEnv, body.storyId);
+    const story = body.storyId
+      ? await generateAndSaveBrief(runtimeEnv, body.storyId)
+      : await generateResearchBriefForQuery(runtimeEnv, body.query || "");
     if (!story) {
       return Response.json({ error: "Story not found or storage unavailable." }, { status: 404 });
     }

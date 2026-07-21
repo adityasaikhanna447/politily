@@ -134,6 +134,8 @@ function normaliseGeminiBrief(
     powerAnalysis: String(parsed.powerAnalysis || ""),
     counterArguments: normaliseList(parsed.counterArguments),
     openQuestions: normaliseList(parsed.openQuestions),
+    monitoringQueries: normaliseList(parsed.monitoringQueries),
+    noVideoUntil: normaliseList(parsed.noVideoUntil),
     storytellingBeats: normaliseList(parsed.storytellingBeats),
     videoAngles: normaliseList(parsed.videoAngles),
     sourcePositions: normaliseList(parsed.sourcePositions),
@@ -187,6 +189,7 @@ Research editor rules:
 10. Source positions must say what each source emphasizes, what it adds, and what its limitation is.
 11. Do not imitate any living creator, channel, or protected style. Use an original serious Indian political explainer voice.
 12. If source text is thin or blocked, clearly label the brief as thin and convert missing facts into a concrete verification plan.
+13. If this is an ad-hoc Politily Research Brain query or an upcoming topic, do not pretend a confirmed event happened. Build a critical research memo: current source trail, what is unknown, what must be watched, what would make it video-worthy, and what must be true before spending creator time.
 
 Before writing, ask yourself and answer inside the JSON:
 - What exactly happened, where, when, who triggered it, and who responded?
@@ -254,6 +257,8 @@ Return only valid JSON with this exact shape:
   "powerAnalysis": "who gains, who loses, who controls information, who controls process, and why the timing matters",
   "counterArguments": ["strongest defence/counter-view and what evidence would test it"],
   "openQuestions": ["unanswered but important question"],
+  "monitoringQueries": ["exact search query, source, institution, or record to monitor next"],
+  "noVideoUntil": ["specific condition that must be met before this is worth a full video"],
   "storytellingBeats": ["creator beat: opening scene, setup, historical turn, evidence turn, counter-view, hard question, what next"],
   "videoAngles": ["specific video angle with hook, audience promise, and why this can/cannot go viral"],
   "sourcePositions": ["source name - what it claims or emphasizes - why it matters or its limitation"],
@@ -567,6 +572,16 @@ function templateBrief(
       "What exact primary record proves the central claim?",
       "Which side's framing is being repeated without independent verification?",
       "What number or document would change the story's conclusion?",
+    ],
+    monitoringQueries: [
+      `"${story.title}" official statement`,
+      `"${story.title}" court order police order ministry response`,
+      `"${story.title}" PTI UNI Reuters Indian Express The Hindu`,
+    ],
+    noVideoUntil: [
+      "At least one primary record or direct official statement is found.",
+      "At least two independent source positions explain the same issue without copying one another.",
+      "The creator angle has a clear public consequence, accountability question, or document-backed contradiction.",
     ],
     storytellingBeats: inferredTopic.storytellingBeats,
     videoAngles: inferredTopic.videoAngles,

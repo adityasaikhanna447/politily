@@ -230,6 +230,110 @@ export async function generateAndSaveBrief(env: RuntimeEnv, storyId: string) {
   };
 }
 
+export async function generateResearchBriefForQuery(env: RuntimeEnv, rawQuery: string) {
+  if (!env.DB) {
+    return null;
+  }
+
+  const query = cleanResearchQuery(rawQuery);
+  if (!query) {
+    return null;
+  }
+
+  await ensureDatabase(env.DB);
+  const recentStories = await listRecentStories(env.DB, 160);
+  const searchSignals = await fetchResearchSignals(query);
+  const topSignals = uniqueResearchSignals(searchSignals).slice(0, 12);
+  const primaryUrl = topSignals[0]?.url || googleNewsSearchUrl(query);
+  const sourceTrail = topSignals.length
+    ? topSignals
+    : [
+        {
+          title: `Open source search for ${query}`,
+          summary:
+            "No reliable live article was found in the quick search pass. Treat this as an upcoming/research-request issue and let the brief focus on what must be verified before spending creator time.",
+          url: googleNewsSearchUrl(query),
+          imageUrl: null,
+          articleExcerpt:
+            "No indexed article excerpt was available during this quick search. The research brief must identify missing sources, primary records, and verification steps before any video is made.",
+          sourceName: "Politily Research Brain",
+          sourceType: "research" as const,
+          sourceCountry: "india/global",
+          language: "English",
+          publishedAt: null,
+          sourceId: "politily-research-brain",
+          sourcePriority: 98,
+        },
+      ];
+  const sourceNames = uniqueStrings(sourceTrail.map((signal) => signal.sourceName));
+  const summary = buildResearchQuerySummary(query, sourceTrail);
+  const articleExcerpt = sourceTrail
+    .map((signal, index) => `${index + 1}. ${signal.sourceName}: ${signal.title}. ${signal.summary}`)
+    .join(" ")
+    .slice(0, 2200);
+  const baseSignal: RawSignal = {
+    title: `Research brain: ${query}`,
+    summary,
+    url: primaryUrl,
+    imageUrl: topSignals.find((signal) => signal.imageUrl)?.imageUrl ?? null,
+    articleExcerpt,
+    sourceName: "Politily Research Brain",
+    sourceType: "research",
+    sourceCountry: "india/global",
+    language: "English",
+    publishedAt: topSignals[0]?.publishedAt ?? null,
+    sourceId: "politily-research-brain",
+    sourcePriority: 98,
+  };
+  const scores = scoreSignal(baseSignal, recentStories);
+  const fingerprint = fingerprintFor({
+    title: `Research brain: ${query}`,
+    url: googleNewsSearchUrl(query),
+    sourceName: "Politily Research Brain",
+  });
+  const existing = await getStoryByFingerprint(env.DB, fingerprint);
+  const story: StoredStory =
+    existing ??
+    {
+      id: newId("story"),
+      fingerprint,
+      title: `Research brain: ${query}`,
+      summary,
+      url: primaryUrl,
+      imageUrl: baseSignal.imageUrl,
+      articleExcerpt,
+      sourceName: topSignals.length ? `Research Brain (${sourceNames.length} sources)` : "Politily Research Brain",
+      sourceType: "research",
+      sourceCountry: "india/global",
+      language: "English",
+      publishedAt: baseSignal.publishedAt ?? null,
+      detectedAt: new Date().toISOString(),
+      status: "triggered",
+      noveltyScore: scores.noveltyScore,
+      politicalWeight: Math.max(scores.politicalWeight, 72),
+      geopoliticalRelevance: scores.geopoliticalRelevance,
+      viralPotential: Math.max(scores.viralPotential, 58),
+      totalScore: Math.max(scores.totalScore, 72),
+      tags: uniqueStrings(["research-request", "creator-brain", ...scores.tags]).slice(0, 6),
+    };
+
+  if (!existing) {
+    await insertStory(env.DB, story);
+  }
+
+  for (const signal of sourceTrail) {
+    await addStorySource(env.DB, {
+      storyId: story.id,
+      title: signal.title,
+      url: signal.url,
+      sourceName: signal.sourceName,
+      publishedAt: signal.publishedAt ?? null,
+    });
+  }
+
+  return generateAndSaveBrief(env, story.id);
+}
+
 async function collectBriefSources(
   db: D1Database,
   story: StoredStory,
@@ -263,6 +367,49 @@ async function collectBriefSources(
   ).flat();
 
   return uniqueBriefLinks(sourceLinks.concat(relatedLinks)).slice(0, 20);
+}
+
+async function fetchResearchSignals(query: string): Promise<RawSignal[]> {
+  const sources: SignalSource[] = [
+    {
+      id: "research-google-news-direct",
+      name: `Google News: ${query}`,
+      type: "rss",
+      url: googleNewsRssUrl(query),
+      region: "india/global",
+      category: "Ad hoc research",
+      priority: 102,
+      active: true,
+    },
+    {
+      id: "research-google-news-politics",
+      name: `Google News politics: ${query}`,
+      type: "rss",
+      url: googleNewsRssUrl(`${query} India politics election government court parliament`),
+      region: "india",
+      category: "Ad hoc research",
+      priority: 101,
+      active: true,
+    },
+    {
+      id: "research-gdelt",
+      name: `GDELT: ${query}`,
+      type: "gdelt",
+      url: gdeltResearchUrl(query),
+      region: "global",
+      category: "Ad hoc research",
+      priority: 100,
+      active: true,
+    },
+  ];
+
+  const results = await Promise.allSettled(
+    sources.map(async (source) => fetchSignals(source, 9000))
+  );
+
+  return results
+    .filter((result): result is PromiseFulfilledResult<RawSignal[]> => result.status === "fulfilled")
+    .flatMap((result) => result.value);
 }
 
 function isRelatedForBrief(story: StoredStory, candidate: StoredStory) {
@@ -772,6 +919,79 @@ function summariseGdeltArticle(article: Record<string, unknown>, source: SignalS
   const date = parseGdeltDate(String(article.seendate ?? ""));
   const seen = date ? new Date(date).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }) : "recently";
   return `Reported by ${domain || source.name} (${country || source.region}) on ${seen}. Use this as a signal, then verify with primary documents, agency copy, and regional context before scripting.`;
+}
+
+function cleanResearchQuery(value: string) {
+  return clean(value)
+    .replace(/[^\p{L}\p{N}\s'"&/().:-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+function googleNewsRssUrl(query: string) {
+  const params = new URLSearchParams({
+    q: query,
+    hl: "en-IN",
+    gl: "IN",
+    ceid: "IN:en",
+  });
+
+  return `https://news.google.com/rss/search?${params.toString()}`;
+}
+
+function googleNewsSearchUrl(query: string) {
+  const params = new URLSearchParams({
+    q: query,
+    hl: "en-IN",
+    gl: "IN",
+    ceid: "IN:en",
+  });
+
+  return `https://news.google.com/search?${params.toString()}`;
+}
+
+function gdeltResearchUrl(query: string) {
+  const params = new URLSearchParams({
+    query,
+    mode: "artlist",
+    format: "json",
+    maxrecords: "12",
+    sort: "datedesc",
+    timespan: "30d",
+  });
+
+  return `https://api.gdeltproject.org/api/v2/doc/doc?${params.toString()}`;
+}
+
+function buildResearchQuerySummary(query: string, signals: RawSignal[]) {
+  if (!signals.length) {
+    return `Research request for "${query}". No strong live source trail was found in the quick open-source pass, so the deep brief must focus on what to verify, which primary records to pull, and whether this is worth spending creator time on.`;
+  }
+
+  const sourceNames = uniqueStrings(signals.map((signal) => signal.sourceName));
+  const headlines = signals.slice(0, 5).map((signal) => `${signal.sourceName}: ${signal.title}`).join(" | ");
+  return `Research request for "${query}". Politily found ${signals.length} open-source signal(s) from ${sourceNames.length} source(s). Top source trail: ${headlines}. The brief should synthesize this as one issue, not a newspaper-by-newspaper summary.`;
+}
+
+function uniqueResearchSignals(signals: RawSignal[]) {
+  const seen = new Set<string>();
+  const unique: RawSignal[] = [];
+  for (const signal of signals) {
+    const key = (signal.url || signal.title).toLowerCase();
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    unique.push(signal);
+  }
+
+  return unique.sort((left, right) => (right.sourcePriority ?? 0) - (left.sourcePriority ?? 0));
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
 function parseDate(value: string) {

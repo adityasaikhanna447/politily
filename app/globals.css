@@ -899,6 +899,12 @@ a {
   padding-right: 4px;
 }
 
+.story-feed.issue-feed {
+  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+}
+
 .story-post {
   background: rgba(23, 28, 29, 0.88);
   border: 1px solid var(--line);
@@ -918,7 +924,51 @@ a {
     rgba(11, 16, 18, 0.96);
   display: grid;
   gap: 11px;
+  grid-template-columns: 112px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
   padding: 12px;
+  position: relative;
+}
+
+.story-post.issue-card.no-media {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.story-feed.issue-feed .story-post.issue-card {
+  flex: 0 0 auto;
+}
+
+.research-intent-card {
+  align-items: center;
+  background:
+    linear-gradient(135deg, rgba(46, 125, 225, 0.18), transparent 42%),
+    linear-gradient(320deg, rgba(223, 74, 60, 0.12), transparent 44%),
+    rgba(11, 16, 18, 0.96);
+  border: 1px solid rgba(91, 156, 246, 0.28);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-bottom: 10px;
+  padding: 14px;
+}
+
+.research-intent-card strong {
+  color: var(--surface);
+  display: block;
+  font-size: 18px;
+  font-weight: 950;
+  line-height: 1.2;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+
+.research-intent-card p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 6px 0 0;
 }
 
 .issue-card.active {
@@ -935,7 +985,13 @@ a {
 }
 
 .issue-card-top {
+  grid-column: 2;
+  grid-row: 1;
   justify-content: space-between;
+}
+
+.issue-card.no-media .issue-card-top {
+  grid-column: 1;
 }
 
 .issue-card-labels {
@@ -969,16 +1025,25 @@ a {
 }
 
 .issue-card .story-image-thumb {
-  aspect-ratio: 16 / 8;
+  aspect-ratio: auto;
   flex: none;
-  height: auto;
-  min-height: 118px;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  height: 118px;
+  min-height: 0;
   width: 100%;
 }
 
 .issue-card .story-post-body {
   display: grid;
   gap: 9px;
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+}
+
+.issue-card.no-media .story-post-body {
+  grid-column: 1;
 }
 
 .issue-card p {
@@ -1726,8 +1791,24 @@ select:focus-visible {
 
   .issue-card .story-image-thumb {
     aspect-ratio: 16 / 8;
+    grid-column: 1;
+    grid-row: auto;
     height: auto;
     min-height: 126px;
+  }
+
+  .story-post.issue-card,
+  .story-post.issue-card.no-media {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+
+  .issue-card-top,
+  .issue-card.no-media .issue-card-top,
+  .issue-card .story-post-body,
+  .issue-card.no-media .story-post-body {
+    grid-column: 1;
+    grid-row: auto;
   }
 
   .dossier-head {
@@ -2098,9 +2179,9 @@ select:focus-visible {
   }
 
   .story-feed.issue-feed {
-    align-content: start;
-    display: grid;
-    grid-auto-rows: auto;
+    align-content: normal;
+    display: flex;
+    flex-direction: column;
   }
 
   .story-post.issue-card {
@@ -2111,23 +2192,44 @@ select:focus-visible {
     border-color: rgba(214, 206, 194, 0.14);
     color: var(--text);
     display: grid;
-    min-height: 0;
-    overflow: visible;
+    grid-template-columns: 118px minmax(0, 1fr);
+    grid-template-areas:
+      "top top"
+      "media body";
+    grid-template-rows: auto auto;
+    min-height: 172px;
+    overflow: hidden;
     padding: 12px;
   }
 
+  .story-post.issue-card.no-media {
+    grid-template-areas:
+      "top"
+      "body";
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 132px;
+  }
+
   .issue-card-top {
+    grid-area: top;
     padding: 0;
   }
 
   .issue-card .story-image-thumb {
     border-radius: 8px;
+    grid-area: media;
+    height: 96px;
+    min-height: 0;
     margin-top: 2px;
+    max-height: 96px;
+    overflow: hidden;
+    width: 118px;
   }
 
   .issue-card .story-post-body {
     display: grid;
     gap: 10px;
+    grid-area: body;
     min-width: 0;
     padding: 0;
   }
@@ -2332,9 +2434,15 @@ select:focus-visible {
       #0a0f11;
     border-color: rgba(214, 206, 194, 0.15);
     display: grid;
-    min-height: 210px;
-    overflow: visible;
+    grid-template-columns: 118px minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    min-height: 0;
+    overflow: hidden;
     padding: 12px;
+  }
+
+  .story-post.issue-card.no-media {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .issue-card-top {

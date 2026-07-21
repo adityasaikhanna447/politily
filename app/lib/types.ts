@@ -125,6 +125,8 @@ export interface PolitilyBrief {
   powerAnalysis?: string;
   counterArguments?: string[];
   openQuestions?: string[];
+  monitoringQueries?: string[];
+  noVideoUntil?: string[];
   storytellingBeats?: string[];
   videoAngles?: string[];
   sourcePositions?: string[];

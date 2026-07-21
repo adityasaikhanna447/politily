@@ -65,6 +65,8 @@ function buildDocumentXml(story: StoredStory) {
     ["Stakeholder map", brief?.stakeholderMap?.length ? brief.stakeholderMap : ["No stakeholder map generated yet."]],
     ["Counter-arguments", brief?.counterArguments?.length ? brief.counterArguments : ["No counter-arguments generated yet."]],
     ["Open questions", brief?.openQuestions?.length ? brief.openQuestions : ["No open questions generated yet."]],
+    ["Monitoring queries", brief?.monitoringQueries?.length ? brief.monitoringQueries : ["No monitoring queries generated yet."]],
+    ["No video until", brief?.noVideoUntil?.length ? brief.noVideoUntil : ["No no-video conditions generated yet."]],
     ["Storytelling beats", brief?.storytellingBeats?.length ? brief.storytellingBeats : ["No storytelling beats generated yet."]],
     ["Video angles", brief?.videoAngles?.length ? brief.videoAngles : ["Generate a brief for video angles."]],
     ["Source positions", brief?.sourcePositions?.length ? brief.sourcePositions : ["No source positions generated yet."]],

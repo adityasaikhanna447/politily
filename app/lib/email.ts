@@ -46,6 +46,7 @@ function buildHtml(story: StoredStory, brief: PolitilyBrief, storyLink: string) 
   const facts = brief.factsAndFigures.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   const dataPoints = (brief.dataPoints ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   const questions = (brief.researchQuestions ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const noVideoUntil = (brief.noVideoUntil ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   const sourcePositions = (brief.sourcePositions ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   const next = brief.whatHappensNext.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   const sources = brief.citedUrls
@@ -70,6 +71,7 @@ function buildHtml(story: StoredStory, brief: PolitilyBrief, storyLink: string) 
         <p>${escapeHtml(brief.institutionalContext || "Regenerate this brief to get institutional accountability context.")}</p>
         ${dataPoints ? `<h2>Data points</h2><ul>${dataPoints}</ul>` : ""}
         ${questions ? `<h2>Hard research questions</h2><ul>${questions}</ul>` : ""}
+        ${noVideoUntil ? `<h2>No video until</h2><ul>${noVideoUntil}</ul>` : ""}
         <h2>Facts and figures</h2>
         <ul>${facts}</ul>
         ${sourcePositions ? `<h2>Source positions</h2><ul>${sourcePositions}</ul>` : ""}
@@ -112,6 +114,9 @@ ${(brief.dataPoints ?? []).join("\n")}
 
 Hard research questions:
 ${(brief.researchQuestions ?? []).join("\n")}
+
+No video until:
+${(brief.noVideoUntil ?? []).join("\n")}
 
 Source positions:
 ${(brief.sourcePositions ?? []).join("\n")}

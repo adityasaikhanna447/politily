@@ -204,6 +204,43 @@ export function PolitilyDashboard() {
     }
   }
 
+  async function generateResearchBrief(queryText: string) {
+    const cleaned = queryText.trim();
+    if (!cleaned) {
+      return;
+    }
+
+    setBusy(true);
+    setView("watch");
+    setSelectedTopic("all");
+    setStatus(`Researching "${cleaned}" across open sources before Gemini brief`);
+    try {
+      const response = await fetch("/api/brief", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: cleaned }),
+      });
+      const payload = (await response.json()) as { state?: DashboardState; story?: StoredStory; error?: string };
+      if (!response.ok || !payload.state || !payload.story) {
+        throw new Error(payload.error || `HTTP ${response.status}`);
+      }
+
+      setState(payload.state);
+      setSelectedId(payload.story.id);
+      setQuery(cleaned);
+      setView("brief");
+      setStatus(
+        payload.story.brief?.generatedBy === "template"
+          ? "Research draft saved, but Gemini fallback was used. Retry this issue before recording."
+          : "Research brain brief ready"
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Research brief generation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const stories = state?.stories ?? [];
   const sources = state?.sources ?? [];
   const enrichedStories = useMemo(
@@ -227,9 +264,9 @@ export function PolitilyDashboard() {
     const cleanedQuery = query.trim().toLowerCase();
     return enrichedStories
       .filter((story) => {
-        const haystack = `${story.title} ${story.summary} ${story.sourceName} ${story.tags.join(" ")} ${story.topics.map((topic) => topic.label).join(" ")}`.toLowerCase();
-        const matchesQuery = !cleanedQuery || haystack.includes(cleanedQuery);
+        const matchesQuery = !cleanedQuery || matchesStoryQuery(story, cleanedQuery);
         const matchesTopic =
+          Boolean(cleanedQuery) ||
           selectedTopic === "all" ||
           story.topics.some((topic) => topic.id === selectedTopic) ||
           story.tags.some((tag) => tag.toLowerCase().includes(selectedTopic));
@@ -238,8 +275,11 @@ export function PolitilyDashboard() {
       .sort((left, right) => compareStories(left, right, sortKey));
   }, [enrichedStories, query, selectedTopic, sortKey]);
 
+  const hasActiveFilter = Boolean(query.trim()) || selectedTopic !== "all";
   const selectedStory =
-    filteredStories.find((story) => story.id === selectedId) ?? filteredStories[0] ?? enrichedStories[0];
+    filteredStories.find((story) => story.id === selectedId) ??
+    filteredStories[0] ??
+    (hasActiveFilter ? undefined : enrichedStories[0]);
 
   return (
     <main className="orm-shell">
@@ -252,7 +292,13 @@ export function PolitilyDashboard() {
           aria-label="Search all political stories"
           className="top-search"
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search issue, party, state, court, source"
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              setSelectedTopic("all");
+              setView("watch");
+            }
+          }}
+          placeholder="Search live issues or type any topic for research brain"
           value={query}
         />
         <div className="top-actions">
@@ -353,8 +399,10 @@ export function PolitilyDashboard() {
           <WatchDesk
             busy={busy}
             onGenerate={generateBrief}
+            onResearchQuery={generateResearchBrief}
             onScoreFocus={setScoreFocus}
             onSelect={setSelectedId}
+            query={query}
             scoreFocus={scoreFocus}
             selectedStory={selectedStory}
             selectedTopic={selectedTopic}
@@ -570,6 +618,7 @@ function WatchDesk({
   stories,
   selectedStory,
   selectedTopic,
+  query,
   sortKey,
   setSortKey,
   setSelectedTopic,
@@ -578,10 +627,12 @@ function WatchDesk({
   onSelect,
   busy,
   onGenerate,
+  onResearchQuery,
 }: {
   stories: EnrichedStory[];
   selectedStory?: EnrichedStory;
   selectedTopic: string;
+  query: string;
   sortKey: SortKey;
   setSortKey: (value: SortKey) => void;
   setSelectedTopic: (value: string) => void;
@@ -590,6 +641,7 @@ function WatchDesk({
   onSelect: (id: string) => void;
   busy: boolean;
   onGenerate: (storyId: string) => void;
+  onResearchQuery: (query: string) => void;
 }) {
   const clusters = useMemo(() => buildIssueClusters(stories), [stories]);
   const selectedCluster = selectedStory
@@ -597,6 +649,7 @@ function WatchDesk({
     : clusters[0];
   const topScore = clusters[0]?.reachScore ?? 0;
   const visibleSources = new Set(clusters.flatMap((cluster) => cluster.sources)).size;
+  const researchQuery = query.trim();
 
   return (
     <>
@@ -643,6 +696,14 @@ function WatchDesk({
               </button>
             ))}
           </div>
+          {researchQuery ? (
+            <ResearchIntentCard
+              busy={busy}
+              matchCount={clusters.length}
+              onResearch={() => onResearchQuery(researchQuery)}
+              query={researchQuery}
+            />
+          ) : null}
           <div className="story-feed issue-feed">
             {clusters.map((cluster) => (
               <IssueClusterCard
@@ -652,7 +713,7 @@ function WatchDesk({
                 onSelect={onSelect}
               />
             ))}
-            {!clusters.length ? <div className="empty-state">No issue clusters match this search or topic filter.</div> : null}
+            {!clusters.length ? <div className="empty-state">No live issue cards match yet. Use Research Brain above to investigate this topic anyway.</div> : null}
           </div>
         </section>
 
@@ -690,7 +751,7 @@ function IssueClusterCard({
   const briefState = briefStateLabel(lead);
 
   return (
-    <button className={`story-post issue-card ${active ? "active" : ""}`} onClick={() => onSelect(lead.id)} type="button">
+    <button className={`story-post issue-card ${active ? "active" : ""} ${lead.imageUrl ? "" : "no-media"}`} onClick={() => onSelect(lead.id)} type="button">
       <div className="issue-card-top">
         <div className="issue-card-labels">
           <span className="source-pill">{cluster.topic.label}</span>
@@ -735,6 +796,35 @@ function IssueClusterCard({
         </div>
       </div>
     </button>
+  );
+}
+
+function ResearchIntentCard({
+  query,
+  matchCount,
+  busy,
+  onResearch,
+}: {
+  query: string;
+  matchCount: number;
+  busy: boolean;
+  onResearch: () => void;
+}) {
+  return (
+    <section className="research-intent-card">
+      <div>
+        <span className="section-chip">Research brain</span>
+        <strong>{query}</strong>
+        <p>
+          {matchCount
+            ? `${matchCount} live issue cluster(s) match. Generate a deeper topic-level report only if this deserves your time.`
+            : "No live card yet. Politily can still search open sources, create one topic-level issue, and run the critical-analysis brief."}
+        </p>
+      </div>
+      <button className="btn btn-gold" disabled={busy} onClick={onResearch} type="button">
+        {busy ? "Working" : "Generate research report"}
+      </button>
+    </section>
   );
 }
 
@@ -934,6 +1024,8 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
       <ListPanel title="Stakeholder map" items={brief.stakeholderMap ?? []} />
       <ListPanel title="Counter-arguments" items={brief.counterArguments ?? []} />
       <ListPanel title="Open questions" items={brief.openQuestions ?? []} />
+      <ListPanel title="Monitoring queries" items={brief.monitoringQueries ?? []} />
+      <ListPanel title="No video until" items={brief.noVideoUntil ?? []} />
       <ListPanel title="Storytelling beats" items={brief.storytellingBeats ?? []} />
       <ListPanel title="Facts and figures" items={brief.factsAndFigures} />
       <ListPanel title="Timeline" items={brief.timeline} />
@@ -1387,6 +1479,47 @@ function briefTokenLabel(brief: StoredStory["brief"]) {
   const output = brief.tokenUsage?.outputTokens;
   const detail = prompt || output ? ` (${formatTokens(prompt ?? 0)} in / ${formatTokens(output ?? 0)} out)` : "";
   return `${formatTokens(total)} tokens${detail}`;
+}
+
+function matchesStoryQuery(story: EnrichedStory, query: string) {
+  const terms = normaliseSearchText(query).split(/\s+/).filter(Boolean);
+  if (!terms.length) {
+    return true;
+  }
+
+  const haystack = normaliseSearchText(storySearchText(story));
+  return terms.every((term) => haystack.includes(term));
+}
+
+function storySearchText(story: EnrichedStory) {
+  const brief = story.brief;
+  return [
+    story.title,
+    story.summary,
+    story.articleExcerpt || "",
+    story.newsSnippet,
+    story.whatHappenedShort,
+    story.sourceName,
+    story.sourceNames.join(" "),
+    story.tags.join(" "),
+    story.topics.map((topic) => `${topic.label} ${topic.summary}`).join(" "),
+    (story.sourceLinks ?? []).map((link) => `${link.sourceName} ${link.title} ${link.url}`).join(" "),
+    brief?.briefTitle || "",
+    brief?.hook || "",
+    brief?.whatHappened || "",
+    brief?.whyItMatters || "",
+    brief?.historicalContext || "",
+    brief?.regionalContext || "",
+    brief?.institutionalContext || "",
+    brief?.powerAnalysis || "",
+    (brief?.researchQuestions ?? []).join(" "),
+    (brief?.dataPoints ?? []).join(" "),
+    (brief?.sourcePositions ?? []).join(" "),
+  ].join(" ");
+}
+
+function normaliseSearchText(value: string) {
+  return cleanDisplayText(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function formatTokens(value: number) {
