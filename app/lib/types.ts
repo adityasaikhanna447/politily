@@ -23,6 +23,7 @@ export interface RuntimeEnv {
   POLITILY_MAX_DEEP_BRIEFS_PER_RUN?: string;
   POLITILY_MAX_SOURCES_PER_RUN?: string;
   POLITILY_FETCH_TIMEOUT_MS?: string;
+  POLITILY_MIN_STORY_DATE?: string;
 }
 
 export interface SignalSource {

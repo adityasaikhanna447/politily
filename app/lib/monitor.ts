@@ -68,6 +68,7 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
     const maxBriefs = numberEnv(env.POLITILY_MAX_DEEP_BRIEFS_PER_RUN, 1);
     const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 8), 12);
     const fetchTimeoutMs = Math.min(numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 9000), 12000);
+    const minStoryDate = minStoryDateEnv(env.POLITILY_MIN_STORY_DATE);
     const scanDeadline = Date.now() + 42000;
     const sources = rotateSources(
       (await listSources(env.DB)).filter((source) => source.active)
@@ -108,6 +109,10 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
       await updateSourceChecked(env.DB, source.id);
 
       for (const signal of signals) {
+        if (isOlderThanMinimumDate(signal.publishedAt, minStoryDate)) {
+          continue;
+        }
+
         const fingerprint = fingerprintFor(signal);
         const existing = await getStoryByFingerprint(env.DB, fingerprint);
         const related = existing ?? findRelatedStory(signal, recentStories);
@@ -514,9 +519,10 @@ function parseDate(value: string) {
 }
 
 function clean(value: string) {
-  return decodeMojibake(decodeEntities(value))
+  return decodeMojibake(decodeEntities(decodeEntities(value)))
     .replace(/<!\[CDATA\[/g, "")
     .replace(/\]\]>/g, "")
+    .replace(/&nbsp;|&amp;nbsp;/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -578,6 +584,25 @@ function decodeEntities(value: string) {
 function numberEnv(value: string | undefined, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function minStoryDateEnv(value?: string) {
+  const fallback = Date.parse("2026-07-20T00:00:00+05:30");
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function isOlderThanMinimumDate(value: string | null | undefined, minStoryDate: number) {
+  if (!value) {
+    return false;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && parsed < minStoryDate;
 }
 
 function errorMessage(error: unknown) {

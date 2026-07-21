@@ -110,6 +110,9 @@ const SCORE_EXPLAINERS: Record<ScoreKey, { label: string; method: string }> = {
   },
 };
 
+const MIN_VISIBLE_STORY_DATE = Date.parse("2026-07-20T00:00:00+05:30");
+const MIN_VISIBLE_STORY_LABEL = "20 Jul 2026";
+
 export function PolitilyDashboard() {
   const [state, setState] = useState<DashboardState | null>(null);
   const [selectedId, setSelectedId] = useState("");
@@ -192,17 +195,20 @@ export function PolitilyDashboard() {
   const stories = state?.stories ?? [];
   const sources = state?.sources ?? [];
   const enrichedStories = useMemo(
-    () => stories.filter(isDisplayableStory).map((story) => enrichStory(story, sources)),
+    () =>
+      stories
+        .filter(isDisplayableStory)
+        .filter(isOnOrAfterVisibleStartDate)
+        .map((story) => enrichStory(story, sources)),
     [stories, sources]
   );
 
   const topicStats = useMemo(() => buildTopicStats(enrichedStories), [enrichedStories]);
   const sourceMix = useMemo(() => buildSourceMix(sources), [sources]);
+  const portalNames = useMemo(() => buildPortalNames(enrichedStories), [enrichedStories]);
   const latestRun = state?.runs[0];
-  const activeSources = sources.filter((source) => source.active).length;
   const triggeredCount = enrichedStories.filter((story) => story.totalScore >= (state?.config.threshold ?? 72)).length;
   const briefedCount = enrichedStories.filter((story) => story.brief).length;
-  const topScore = enrichedStories[0]?.totalScore ?? 0;
 
   const filteredStories = useMemo(() => {
     const cleanedQuery = query.trim().toLowerCase();
@@ -241,9 +247,9 @@ export function PolitilyDashboard() {
             <span>Last scan</span>
             <strong>{latestRun ? formatDateTime(latestRun.finishedAt || latestRun.startedAt) : "Waiting"}</strong>
           </div>
-          <div className="score-chip">
-            <strong>{topScore}</strong>
-            <span>Top score</span>
+          <div className="score-chip portal-chip">
+            <strong>{portalNames.length}</strong>
+            <span>Portals since {MIN_VISIBLE_STORY_LABEL}</span>
           </div>
           <button className="btn btn-ghost" disabled={busy} onClick={refreshState} type="button">
             Refresh
@@ -292,17 +298,24 @@ export function PolitilyDashboard() {
 
       <section className="orm-main">
         <div className="system-note">
-          <span>{status}</span>
+          <span>{status}. Showing news from {MIN_VISIBLE_STORY_LABEL} onward.</span>
           <strong>
-            D1 tables: 4 normal tables. Domain/email: {state?.config.emailReady ? "ready" : "pending Resend DNS/API"}.
+            {portalNames.length} portals cited in visible stories. D1 tables: 4 normal tables.
           </strong>
+        </div>
+
+        <div className="mobile-news-summary">
+          <span>Since {MIN_VISIBLE_STORY_LABEL}</span>
+          <strong>{enrichedStories.length} signals</strong>
+          <strong>{portalNames.length} portals</strong>
+          <strong>{triggeredCount} priority</strong>
         </div>
 
         <section className="kpi-grid">
           <Kpi tone="gold" label="Signals" value={enrichedStories.length} sub="stored stories" />
           <Kpi tone="orange" label="Triggered" value={triggeredCount} sub={`threshold ${state?.config.threshold ?? 72}`} />
           <Kpi tone="green" label="Briefs" value={briefedCount} sub="generated" />
-          <Kpi tone="blue" label="Sources" value={activeSources} sub="active lanes" />
+          <Kpi tone="blue" label="Portals" value={portalNames.length} sub={`visible since ${MIN_VISIBLE_STORY_LABEL}`} />
           <Kpi tone="purple" label="Gemini" value={state?.config.geminiReady ? "Ready" : "Missing"} sub={state?.config.model ?? "model"} />
           <Kpi tone="red" label="Email" value={state?.config.emailReady ? "Ready" : "Pending"} sub="Resend domain" />
         </section>
@@ -314,6 +327,7 @@ export function PolitilyDashboard() {
               setSelectedTopic(topicId);
               setView("watch");
             }}
+            portalNames={portalNames}
             sourceMix={sourceMix}
             stories={enrichedStories}
             topicStats={topicStats}
@@ -370,12 +384,14 @@ function OverviewDesk({
   stories,
   topicStats,
   sourceMix,
+  portalNames,
   latestRun,
   onTopicClick,
 }: {
   stories: EnrichedStory[];
   topicStats: Array<TopicRule & { count: number; maxScore: number }>;
   sourceMix: Array<{ label: string; count: number; active: number }>;
+  portalNames: string[];
   latestRun: DashboardState["runs"][number] | undefined;
   onTopicClick: (topicId: string) => void;
 }) {
@@ -439,7 +455,17 @@ function OverviewDesk({
       </section>
 
       <section className="panel">
-        <PanelTitle title="Source mix" />
+        <PanelTitle title="Today's portals" />
+        <p className="portal-summary">
+          {portalNames.length} unique portals cited since {MIN_VISIBLE_STORY_LABEL}.
+        </p>
+        <div className="portal-chip-list">
+          {portalNames.slice(0, 10).map((portal) => (
+            <span key={portal}>{portal}</span>
+          ))}
+          {portalNames.length > 10 ? <strong>+{portalNames.length - 10} more</strong> : null}
+        </div>
+        <PanelTitle title="Source lanes" />
         <div className="source-mix-list">
           {sourceMix.map((source) => (
             <div className="source-mix-row" key={source.label}>
@@ -554,18 +580,15 @@ function StoryCard({ story, active, onSelect }: { story: EnrichedStory; active: 
     <button className={`story-post ${active ? "active" : ""}`} onClick={() => onSelect(story.id)} type="button">
       <StoryImage story={story} variant="thumb" />
       <div className="story-post-body">
-        <div className="post-meta">
-          <span>{story.sourceName}</span>
+        <div className="post-source-row">
+          <span className="source-pill">{story.sourceName}</span>
           <span>{formatRelativeDate(story.publishedAt || story.detectedAt)}</span>
         </div>
         <h3>{story.title}</h3>
         <p>{story.newsSnippet}</p>
-        <div className="post-tags">
-          {story.topics.slice(0, 3).map((topic) => <span key={topic.id}>{topic.label}</span>)}
-        </div>
-        <div className="post-footer">
-          <strong>{story.reachScore}/100 Indian reach</strong>
-          <span>{story.sourceDiversity} unique sources</span>
+        <div className="post-signal-line">
+          <strong>{story.sourceDiversity} source{story.sourceDiversity === 1 ? "" : "s"}</strong>
+          <span>{story.verificationState}</span>
         </div>
       </div>
     </button>
@@ -583,10 +606,13 @@ function StoryImage({ story, variant = "thumb" }: { story: EnrichedStory; varian
         <img alt="" loading="lazy" onError={() => setFailed(true)} src={story.imageUrl} />
       ) : (
         <div className="image-fallback">
-          <span>{label}</span>
           <strong>{initials}</strong>
         </div>
       )}
+      <div className="image-overlay">
+        <span>{label}</span>
+        <strong>{story.reachScore}/100</strong>
+      </div>
     </div>
   );
 }
@@ -877,8 +903,8 @@ function SourceTrail({ links }: { links: StorySourceLink[] }) {
       {links.length ? (
         links.slice(0, 8).map((link) => (
           <a href={link.url} key={`${link.sourceName}-${link.url}`} rel="noreferrer" target="_blank">
-            <span>{link.sourceName}</span>
-            <strong>{link.title}</strong>
+            <span>{cleanDisplayText(link.sourceName)}</span>
+            <strong>{cleanDisplayText(link.title)}</strong>
           </a>
         ))
       ) : (
@@ -889,19 +915,26 @@ function SourceTrail({ links }: { links: StorySourceLink[] }) {
 }
 
 function enrichStory(story: StoredStory, sources: SignalSource[]): EnrichedStory {
-  const topics = deriveTopics(story);
+  const displayStory = {
+    ...story,
+    title: cleanDisplayText(story.title),
+    summary: cleanDisplayText(story.summary),
+    sourceName: cleanDisplayText(story.sourceName),
+    articleExcerpt: story.articleExcerpt ? cleanDisplayText(story.articleExcerpt) : story.articleExcerpt,
+  };
+  const topics = deriveTopics(displayStory);
   const sourceLinks = uniqueStoryLinks(story.sourceLinks ?? []);
-  const sourceNames = Array.from(new Set([story.sourceName, ...sourceLinks.map((link) => link.sourceName)].filter(Boolean)));
+  const sourceNames = Array.from(new Set([displayStory.sourceName, ...sourceLinks.map((link) => cleanDisplayText(link.sourceName))].filter(Boolean)));
   const matchingSource = sources.find((source) => source.name.toLowerCase() === story.sourceName.toLowerCase());
   const reachScore = story.brief?.audienceReachScore ?? clamp(Math.round(story.totalScore * 0.72 + story.viralPotential * 0.18 + story.politicalWeight * 0.1));
-  const newsSnippet = cleanSummary(story.articleExcerpt || story.summary, story, 175);
+  const newsSnippet = cleanSummary(displayStory.articleExcerpt || displayStory.summary, displayStory, 175);
 
   return {
-    ...story,
+    ...displayStory,
     topics,
     sourceLinks,
     newsSnippet,
-    whatHappenedShort: cleanSummary(story.brief?.whatHappened || story.articleExcerpt || story.summary, story),
+    whatHappenedShort: cleanSummary(story.brief?.whatHappened || displayStory.articleExcerpt || displayStory.summary, displayStory),
     reachScore,
     reachReason: story.brief?.audienceReachReason || reachReason(story, reachScore),
     sourceNames,
@@ -940,6 +973,20 @@ function buildSourceMix(sources: SignalSource[]) {
   });
 
   return Array.from(groups.values()).sort((left, right) => right.active - left.active || left.label.localeCompare(right.label));
+}
+
+function buildPortalNames(stories: EnrichedStory[]) {
+  const names = new Set<string>();
+  stories.forEach((story) => {
+    story.sourceNames.forEach((name) => {
+      const cleaned = cleanDisplayText(name);
+      if (cleaned) {
+        names.add(cleaned);
+      }
+    });
+  });
+
+  return Array.from(names).sort((left, right) => left.localeCompare(right));
 }
 
 function compareStories(left: EnrichedStory, right: EnrichedStory, sortKey: SortKey) {
@@ -1002,12 +1049,48 @@ function verificationState(story: StoredStory, sourceDiversity: number) {
 }
 
 function cleanSummary(summary: string, story: StoredStory, maxLength = 230) {
-  const value = summary?.trim();
+  const value = cleanDisplayText(summary);
   if (!value || /^\d{8}T?\d*/.test(value)) {
     return `A political signal was detected from ${story.sourceName}. Open the source trail and generate a brief before treating it as publishable.`;
   }
 
   return value.length > maxLength ? `${value.slice(0, Math.max(0, maxLength - 3))}...` : value;
+}
+
+function cleanDisplayText(value: string) {
+  return decodeDisplayEntities(decodeDisplayEntities(value || ""))
+    .replace(/&nbsp;|&amp;nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function decodeDisplayEntities(value: string) {
+  const named: Record<string, string> = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: '"',
+    apos: "'",
+    nbsp: " ",
+  };
+
+  return value.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (_, entity: string) => {
+    if (entity.startsWith("#x")) {
+      return String.fromCharCode(Number.parseInt(entity.slice(2), 16));
+    }
+
+    if (entity.startsWith("#")) {
+      return String.fromCharCode(Number.parseInt(entity.slice(1), 10));
+    }
+
+    return named[entity.toLowerCase()] ?? `&${entity};`;
+  });
+}
+
+function isOnOrAfterVisibleStartDate(story: StoredStory) {
+  const value = story.publishedAt || story.detectedAt;
+  const parsed = Date.parse(value);
+  return !Number.isFinite(parsed) || parsed >= MIN_VISIBLE_STORY_DATE;
 }
 
 function storyInitials(story: StoredStory) {
