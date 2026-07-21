@@ -387,6 +387,29 @@ export async function listRecentStories(
   return stories;
 }
 
+export async function listStoriesInDateRange(
+  db: D1Database,
+  startIso: string,
+  endIso: string,
+  limit = 80
+): Promise<StoredStory[]> {
+  await ensureDatabase(db);
+  const result = await db
+    .prepare(
+      `SELECT * FROM stories
+      WHERE COALESCE(published_at, detected_at) >= ?
+        AND COALESCE(published_at, detected_at) <= ?
+      ORDER BY total_score DESC, viral_potential DESC, detected_at DESC
+      LIMIT ?`
+    )
+    .bind(startIso, endIso, limit)
+    .all<Row>();
+
+  const stories = result.results.map(toStory);
+  await attachSources(db, stories);
+  return stories;
+}
+
 export async function listRuns(db: D1Database, limit = 8): Promise<ScanRun[]> {
   const result = await db
     .prepare("SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT ?")

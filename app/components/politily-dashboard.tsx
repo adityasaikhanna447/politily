@@ -136,6 +136,8 @@ export function PolitilyDashboard() {
   const [selectedTopic, setSelectedTopic] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("rank");
   const [scoreFocus, setScoreFocus] = useState<ScoreKey>("viralPotential");
+  const [emailStartDate, setEmailStartDate] = useState(() => todayDateInput());
+  const [emailEndDate, setEmailEndDate] = useState(() => todayDateInput());
 
   useEffect(() => {
     void refreshState();
@@ -237,6 +239,40 @@ export function PolitilyDashboard() {
       );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Research brief generation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendDigestEmail(mode: "today" | "range") {
+    setBusy(true);
+    setStatus(mode === "today" ? "Sending today's strategic digest" : "Sending selected date-range digest");
+    try {
+      const response = await fetch("/api/email-digest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          mode === "today"
+            ? { mode: "today" }
+            : { mode: "range", startDate: emailStartDate, endDate: emailEndDate }
+        ),
+      });
+      const payload = (await response.json()) as {
+        sent?: boolean;
+        message?: string;
+        issueCount?: number;
+        storyCount?: number;
+        sourceCount?: number;
+      };
+      if (!response.ok || !payload.sent) {
+        throw new Error(payload.message || `HTTP ${response.status}`);
+      }
+
+      setStatus(
+        `${payload.message || "Digest email sent"} ${payload.issueCount ?? 0} issues, ${payload.storyCount ?? 0} reports, ${payload.sourceCount ?? 0} sources.`
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Digest email failed");
     } finally {
       setBusy(false);
     }
@@ -419,7 +455,18 @@ export function PolitilyDashboard() {
         ) : null}
 
         {view === "sources" && state ? <SourceDesk sourceMix={sourceMix} sources={sources} /> : null}
-        {view === "setup" && state ? <SetupDesk state={state} latestRun={latestRun} /> : null}
+        {view === "setup" && state ? (
+          <SetupDesk
+            busy={busy}
+            emailEndDate={emailEndDate}
+            emailStartDate={emailStartDate}
+            latestRun={latestRun}
+            onEmailEndDate={setEmailEndDate}
+            onEmailStartDate={setEmailStartDate}
+            onSendDigest={sendDigestEmail}
+            state={state}
+          />
+        ) : null}
       </section>
 
       {selectedStory ? (
@@ -1105,7 +1152,25 @@ function SourceDesk({ sources, sourceMix }: { sources: SignalSource[]; sourceMix
   );
 }
 
-function SetupDesk({ state, latestRun }: { state: DashboardState; latestRun: DashboardState["runs"][number] | undefined }) {
+function SetupDesk({
+  state,
+  latestRun,
+  busy,
+  emailStartDate,
+  emailEndDate,
+  onEmailStartDate,
+  onEmailEndDate,
+  onSendDigest,
+}: {
+  state: DashboardState;
+  latestRun: DashboardState["runs"][number] | undefined;
+  busy: boolean;
+  emailStartDate: string;
+  emailEndDate: string;
+  onEmailStartDate: (value: string) => void;
+  onEmailEndDate: (value: string) => void;
+  onSendDigest: (mode: "today" | "range") => void;
+}) {
   const tokenTotal = sumBriefTokens(state.stories.filter(isDisplayableStory).filter(isOnOrAfterVisibleStartDate).map((story) => enrichStory(story, state.sources)));
 
   return (
@@ -1119,6 +1184,29 @@ function SetupDesk({ state, latestRun }: { state: DashboardState; latestRun: Das
           <StrategyRow label="Email" value={state.config.emailReady ? "Ready." : "Pending. Resend domain/API still needed."} />
           <StrategyRow label="Cron" value="Cloudflare schedule runs every 15 minutes. Cloudflare UI shows UTC, app shows IST." />
         </div>
+      </div>
+      <div className="panel">
+        <PanelTitle title="Email digest" />
+        <p className="muted-copy">Send a ranked newsroom digest from stored issues. This does not spend Gemini tokens; it emails scores, source trail, snippets, verification risk, and creator angle.</p>
+        <div className="digest-form">
+          <label className="date-field">
+            <span>From</span>
+            <input onChange={(event) => onEmailStartDate(event.target.value)} type="date" value={emailStartDate} />
+          </label>
+          <label className="date-field">
+            <span>To</span>
+            <input onChange={(event) => onEmailEndDate(event.target.value)} type="date" value={emailEndDate} />
+          </label>
+        </div>
+        <div className="action-row">
+          <button className="btn btn-gold" disabled={busy || !state.config.emailReady} onClick={() => onSendDigest("today")} type="button">
+            Send today till now
+          </button>
+          <button className="btn btn-ghost" disabled={busy || !state.config.emailReady} onClick={() => onSendDigest("range")} type="button">
+            Send selected dates
+          </button>
+        </div>
+        {!state.config.emailReady ? <p className="warning-copy">Email is pending. Add RESEND_API_KEY, ALERT_EMAIL, and ALERT_FROM_EMAIL first.</p> : null}
       </div>
       <div className="panel">
         <PanelTitle title="Priority basis" />
@@ -1537,6 +1625,12 @@ function formatTokens(value: number) {
   }
 
   return String(value);
+}
+
+function todayDateInput() {
+  const date = new Date();
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 10);
 }
 
 function cleanSummary(summary: string, story: StoredStory, maxLength = 230) {
