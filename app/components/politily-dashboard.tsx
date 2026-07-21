@@ -595,57 +595,83 @@ function WatchDesk({
   const selectedCluster = selectedStory
     ? clusters.find((cluster) => cluster.stories.some((story) => story.id === selectedStory.id))
     : clusters[0];
+  const topScore = clusters[0]?.reachScore ?? 0;
+  const visibleSources = new Set(clusters.flatMap((cluster) => cluster.sources)).size;
 
   return (
-    <div className="watch-grid">
-      <section className="panel feed-panel">
-        <div className="feed-tools">
-          <PanelTitle title="Issue radar" />
-          <select className="select-control" onChange={(event) => setSortKey(event.target.value as SortKey)} value={sortKey}>
-            <option value="rank">Rank: highest score</option>
-            <option value="recent">Recent first</option>
-            <option value="oldest">Old to new</option>
-            <option value="viral">Viral potential</option>
-            <option value="political">Political weight</option>
-            <option value="source">Source priority</option>
-          </select>
+    <>
+      <section className="radar-hero">
+        <div>
+          <span className="section-chip">Creator radar</span>
+          <h1>Today's political issues</h1>
+          <p>Grouped by topic and source trail, so one issue does not become ten repeated newspaper cards.</p>
         </div>
-        <div className="pill-row">
-          <button className={`pill ${selectedTopic === "all" ? "active" : ""}`} onClick={() => setSelectedTopic("all")} type="button">All</button>
-          {TOPIC_RULES.map((topic) => (
-            <button className={`pill ${selectedTopic === topic.id ? "active" : ""}`} key={topic.id} onClick={() => setSelectedTopic(topic.id)} type="button">
-              {topic.label}
-            </button>
-          ))}
-        </div>
-        <div className="story-feed issue-feed">
-          {clusters.map((cluster) => (
-            <IssueClusterCard
-              active={cluster.id === selectedCluster?.id}
-              cluster={cluster}
-              key={cluster.id}
-              onSelect={onSelect}
-            />
-          ))}
-          {!clusters.length ? <div className="empty-state">No issue clusters match this search or topic filter.</div> : null}
+        <div className="radar-stats">
+          <span>
+            <strong>{clusters.length}</strong>
+            <small>Issues</small>
+          </span>
+          <span>
+            <strong>{topScore}</strong>
+            <small>Top reach</small>
+          </span>
+          <span>
+            <strong>{visibleSources}</strong>
+            <small>Sources</small>
+          </span>
         </div>
       </section>
 
-      <section className="panel dossier-panel">
-        {selectedStory ? (
-          <StoryDossier
-            busy={busy}
-            cluster={selectedCluster}
-            onGenerate={onGenerate}
-            onScoreFocus={onScoreFocus}
-            scoreFocus={scoreFocus}
-            story={selectedStory}
-          />
-        ) : (
-          <div className="empty-state">Select a story to inspect the research dossier.</div>
-        )}
-      </section>
-    </div>
+      <div className="watch-grid">
+        <section className="panel feed-panel">
+          <div className="feed-tools">
+            <PanelTitle title="Issue queue" />
+            <select className="select-control" onChange={(event) => setSortKey(event.target.value as SortKey)} value={sortKey}>
+              <option value="rank">Rank: highest score</option>
+              <option value="recent">Recent first</option>
+              <option value="oldest">Old to new</option>
+              <option value="viral">Viral potential</option>
+              <option value="political">Political weight</option>
+              <option value="source">Source priority</option>
+            </select>
+          </div>
+          <div className="pill-row">
+            <button className={`pill ${selectedTopic === "all" ? "active" : ""}`} onClick={() => setSelectedTopic("all")} type="button">All</button>
+            {TOPIC_RULES.map((topic) => (
+              <button className={`pill ${selectedTopic === topic.id ? "active" : ""}`} key={topic.id} onClick={() => setSelectedTopic(topic.id)} type="button">
+                {topic.label}
+              </button>
+            ))}
+          </div>
+          <div className="story-feed issue-feed">
+            {clusters.map((cluster) => (
+              <IssueClusterCard
+                active={cluster.id === selectedCluster?.id}
+                cluster={cluster}
+                key={cluster.id}
+                onSelect={onSelect}
+              />
+            ))}
+            {!clusters.length ? <div className="empty-state">No issue clusters match this search or topic filter.</div> : null}
+          </div>
+        </section>
+
+        <section className="panel dossier-panel">
+          {selectedStory ? (
+            <StoryDossier
+              busy={busy}
+              cluster={selectedCluster}
+              onGenerate={onGenerate}
+              onScoreFocus={onScoreFocus}
+              scoreFocus={scoreFocus}
+              story={selectedStory}
+            />
+          ) : (
+            <div className="empty-state">Select a story to inspect the research dossier.</div>
+          )}
+        </section>
+      </div>
+    </>
   );
 }
 
