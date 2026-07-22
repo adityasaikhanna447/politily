@@ -278,6 +278,24 @@ export function PolitilyDashboard() {
     }
   }
 
+  async function sendTestEmail() {
+    setBusy(true);
+    setStatus("Sending Resend test email");
+    try {
+      const response = await fetch("/api/test-email", { method: "POST" });
+      const payload = (await response.json()) as { sent?: boolean; message?: string };
+      if (!response.ok || !payload.sent) {
+        throw new Error(payload.message || `HTTP ${response.status}`);
+      }
+
+      setStatus(payload.message || "Test email sent");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Test email failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const stories = state?.stories ?? [];
   const sources = state?.sources ?? [];
   const enrichedStories = useMemo(
@@ -466,6 +484,7 @@ export function PolitilyDashboard() {
             onEmailEndDate={setEmailEndDate}
             onEmailStartDate={setEmailStartDate}
             onSendDigest={sendDigestEmail}
+            onSendTestEmail={sendTestEmail}
             state={state}
           />
         ) : null}
@@ -1163,6 +1182,7 @@ function SetupDesk({
   onEmailStartDate,
   onEmailEndDate,
   onSendDigest,
+  onSendTestEmail,
 }: {
   state: DashboardState;
   latestRun: DashboardState["runs"][number] | undefined;
@@ -1172,6 +1192,7 @@ function SetupDesk({
   onEmailStartDate: (value: string) => void;
   onEmailEndDate: (value: string) => void;
   onSendDigest: (mode: "today" | "range") => void;
+  onSendTestEmail: () => void;
 }) {
   const tokenTotal = sumBriefTokens(state.stories.filter(isDisplayableStory).filter(isOnOrAfterVisibleStartDate).map((story) => enrichStory(story, state.sources)));
 
@@ -1184,7 +1205,8 @@ function SetupDesk({
           <StrategyRow label="Gemini" value={state.config.geminiReady ? `Ready: ${state.config.model}` : "Missing API key."} />
           <StrategyRow label="Token policy" value={`Scanning uses RSS/GDELT/open pages: 0 Gemini tokens. Generated briefs recorded so far: ${formatTokens(tokenTotal)} tokens.`} />
           <StrategyRow label="Email" value={state.config.emailReady ? "Ready." : "Pending. Resend domain/API still needed."} />
-          <StrategyRow label="Cron" value="Cloudflare schedule runs every 15 minutes. Cloudflare UI shows UTC, app shows IST." />
+          <StrategyRow label="Auto alerts" value={`Fast signal emails at ${state.config.alertThreshold}/100. Deep brief trigger remains ${state.config.threshold}/100.`} />
+          <StrategyRow label="Cron" value="Use */5 * * * * for early access. Cloudflare UI shows UTC, app shows IST." />
         </div>
       </div>
       <div className="panel">
@@ -1201,6 +1223,9 @@ function SetupDesk({
           </label>
         </div>
         <div className="action-row">
+          <button className="btn btn-ghost" disabled={busy || !state.config.emailReady} onClick={onSendTestEmail} type="button">
+            Send test email
+          </button>
           <button className="btn btn-gold" disabled={busy || !state.config.emailReady} onClick={() => onSendDigest("today")} type="button">
             Send today till now
           </button>

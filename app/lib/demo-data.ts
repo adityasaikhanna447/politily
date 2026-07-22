@@ -123,6 +123,7 @@ export function getDemoState(sources: SignalSource[] = DEFAULT_SOURCES): Dashboa
     generatedAt: new Date().toISOString(),
     config: {
       threshold: 72,
+      alertThreshold: 60,
       geminiReady: false,
       emailReady: false,
       storageReady: false,

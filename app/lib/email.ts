@@ -16,6 +16,8 @@ interface DigestIssue {
   score: number;
 }
 
+const DEFAULT_APP_BASE_URL = "https://politily.adityakhanna-tcc.workers.dev/";
+
 export async function sendBriefEmail(
   env: RuntimeEnv,
   story: StoredStory,
@@ -29,9 +31,7 @@ export async function sendBriefEmail(
     };
   }
 
-  const storyLink = env.APP_BASE_URL
-    ? `${env.APP_BASE_URL.replace(/\/$/, "")}/?story=${encodeURIComponent(story.id)}`
-    : story.url;
+  const storyLink = `${appBaseUrl(env)}/?story=${encodeURIComponent(story.id)}`;
 
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -58,6 +58,46 @@ export async function sendBriefEmail(
   return { sent: true, message: "Alert email sent." };
 }
 
+export async function sendSignalEmail(env: RuntimeEnv, story: StoredStory) {
+  if (!env.RESEND_API_KEY || !env.ALERT_EMAIL || !env.ALERT_FROM_EMAIL) {
+    return {
+      sent: false,
+      message:
+        "Signal email skipped. Set RESEND_API_KEY, ALERT_EMAIL, and ALERT_FROM_EMAIL to enable alerts.",
+    };
+  }
+
+  const storyLink = `${appBaseUrl(env)}/?story=${encodeURIComponent(story.id)}`;
+  const sources = uniqueEmailStrings([
+    story.sourceName,
+    ...(story.sourceLinks ?? []).map((link) => link.sourceName),
+  ]);
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: env.ALERT_FROM_EMAIL,
+      to: [env.ALERT_EMAIL],
+      subject: `[Politily Signal ${story.totalScore}] ${cleanEmailText(story.title)}`,
+      html: buildSignalHtml(story, storyLink, sources),
+      text: buildSignalText(story, storyLink, sources),
+    }),
+  });
+
+  if (!response.ok) {
+    return {
+      sent: false,
+      message: `Resend signal returned HTTP ${response.status}${await shortResponseBody(response)}.`,
+    };
+  }
+
+  return { sent: true, message: "Signal email sent." };
+}
+
 export async function sendTestEmail(env: RuntimeEnv) {
   if (!env.RESEND_API_KEY || !env.ALERT_EMAIL || !env.ALERT_FROM_EMAIL) {
     return {
@@ -67,7 +107,7 @@ export async function sendTestEmail(env: RuntimeEnv) {
     };
   }
 
-  const appLink = env.APP_BASE_URL || "https://politily.adityakhanna-tcc.workers.dev/";
+  const appLink = appBaseUrl(env);
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -109,7 +149,7 @@ export async function sendStrategicDigestEmail(
   const issues = buildDigestIssues(stories).slice(0, 15);
   const sourceCount = new Set(issues.flatMap((issue) => issue.sources)).size;
   const topScore = issues[0]?.score ?? 0;
-  const appLink = env.APP_BASE_URL || "https://politily.adityakhanna-tcc.workers.dev/";
+  const appLink = appBaseUrl(env);
   const subject = `[Politily Digest] ${options.label}: ${issues.length} issues, top score ${topScore}`;
 
   const response = await fetch("https://api.resend.com/emails", {
@@ -141,6 +181,50 @@ export async function sendStrategicDigestEmail(
     storyCount: stories.length,
     sourceCount,
   };
+}
+
+function buildSignalHtml(story: StoredStory, storyLink: string, sources: string[]) {
+  const links = (story.sourceLinks ?? [])
+    .slice(0, 8)
+    .map((link) => `<li><a href="${escapeHtml(link.url)}" style="color:#8dbdff;">${escapeHtml(cleanEmailText(link.sourceName))}</a> - ${escapeHtml(cleanEmailText(link.title))}</li>`)
+    .join("");
+
+  return `<!doctype html>
+  <html>
+    <body style="margin:0;background:#050708;color:#f6efe4;font-family:Arial,sans-serif;">
+      <main style="max-width:720px;margin:0 auto;padding:28px;">
+        <p style="letter-spacing:.14em;text-transform:uppercase;color:#8fa0a8;font-size:12px;margin:0 0 8px;">Politily fast signal</p>
+        <h1 style="font-size:26px;line-height:1.18;margin:0 0 12px;">${escapeHtml(cleanEmailText(story.title))}</h1>
+        <p style="color:#d9dddc;line-height:1.55;margin:0 0 14px;">${escapeHtml(snippetForStory(story))}</p>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:0 0 18px;">
+          ${digestStat("Total", String(story.totalScore))}
+          ${digestStat("Viral", String(story.viralPotential))}
+          ${digestStat("Political", String(story.politicalWeight))}
+          ${digestStat("Sources", String(Math.max(1, sources.length)))}
+        </div>
+        <p style="border-left:3px solid #3b9cff;padding-left:12px;color:#f2eee6;line-height:1.55;margin:0 0 14px;"><strong>Why this email:</strong> This crossed Politily's alert rule or strengthened a watched issue. Generate a deep brief only if the source trail looks worth creator time.</p>
+        <p style="color:#b7bdbe;line-height:1.55;margin:0 0 8px;"><strong>Source mix:</strong> ${escapeHtml(sources.join(", ") || story.sourceName)}</p>
+        ${links ? `<ul style="color:#b7bdbe;line-height:1.55;margin:8px 0 14px;padding-left:18px;">${links}</ul>` : ""}
+        <p style="margin:0;"><a href="${escapeHtml(storyLink)}" style="color:#8dbdff;">Open issue in Politily</a></p>
+      </main>
+    </body>
+  </html>`;
+}
+
+function buildSignalText(story: StoredStory, storyLink: string, sources: string[]) {
+  return `Politily fast signal
+
+${cleanEmailText(story.title)}
+
+Score: ${story.totalScore}/100
+Viral: ${story.viralPotential}/100
+Political: ${story.politicalWeight}/100
+Sources: ${sources.join(", ") || story.sourceName}
+
+What happened:
+${snippetForStory(story)}
+
+Open: ${storyLink}`;
 }
 
 function buildHtml(story: StoredStory, brief: PolitilyBrief, storyLink: string) {
@@ -475,6 +559,10 @@ function escapeHtml(value: string) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function appBaseUrl(env: RuntimeEnv) {
+  return (env.APP_BASE_URL || DEFAULT_APP_BASE_URL).replace(/\/$/, "");
 }
 
 function cleanEmailText(value: string) {

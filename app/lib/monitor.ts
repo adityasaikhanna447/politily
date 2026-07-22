@@ -1,5 +1,5 @@
 import { getDemoState } from "./demo-data";
-import { sendBriefEmail } from "./email";
+import { sendBriefEmail, sendSignalEmail } from "./email";
 import { generateBriefWithGemini } from "./gemini";
 import { fingerprintFor, scoreSignal, titleSimilarity } from "./scoring";
 import {
@@ -30,8 +30,10 @@ import type {
 } from "./types";
 
 export function getRuntimeConfig(env: RuntimeEnv): DashboardState["config"] {
+  const threshold = numberEnv(env.POLITILY_SCORE_THRESHOLD, 72);
   return {
-    threshold: numberEnv(env.POLITILY_SCORE_THRESHOLD, 72),
+    threshold,
+    alertThreshold: Math.min(threshold, numberEnv(env.POLITILY_ALERT_MIN_SCORE, 60)),
     geminiReady: Boolean(env.GEMINI_API_KEY),
     emailReady: Boolean(env.RESEND_API_KEY && env.ALERT_EMAIL && env.ALERT_FROM_EMAIL),
     storageReady: Boolean(env.DB),
@@ -65,7 +67,9 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
 
   try {
     const threshold = numberEnv(env.POLITILY_SCORE_THRESHOLD, 72);
+    const alertThreshold = Math.min(threshold, numberEnv(env.POLITILY_ALERT_MIN_SCORE, 60));
     const maxBriefs = numberEnv(env.POLITILY_MAX_DEEP_BRIEFS_PER_RUN, 1);
+    const maxEmailAlerts = Math.min(numberEnv(env.POLITILY_MAX_EMAIL_ALERTS_PER_RUN, 5), 12);
     const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 18), 24);
     const fetchTimeoutMs = Math.min(numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 6500), 10000);
     const minStoryDate = minStoryDateEnv(env.POLITILY_MIN_STORY_DATE);
@@ -77,6 +81,7 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
     ).slice(0, Math.max(1, maxSources));
     const recentStories = await listRecentStories(env.DB, 160);
     const triggeredStories: StoredStory[] = [];
+    const alertCandidates = new Map<string, StoredStory>();
     let scannedCount = 0;
     let createdCount = 0;
     let emailedCount = 0;
@@ -133,6 +138,9 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
             sourceName: signal.sourceName,
             publishedAt: signal.publishedAt ?? null,
           });
+          if (shouldFastAlertRelatedIssue(related, signal, alertThreshold)) {
+            alertCandidates.set(related.id, related);
+          }
           continue;
         }
 
@@ -170,12 +178,17 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
         if (triggerWorthy) {
           triggeredStories.push(story);
         }
+
+        if (isFastAlertWorthy(signal, scores, alertThreshold)) {
+          alertCandidates.set(story.id, story);
+        }
       }
     }
 
     for (const story of prioritizeBriefCandidates(triggeredStories).slice(0, maxBriefs)) {
       const updated = await generateAndSaveBrief(env, story.id);
       if (updated?.brief) {
+        alertCandidates.delete(updated.id);
         const email = await sendBriefEmail(env, updated, updated.brief);
         if (email.sent && env.DB) {
           await markEmailSent(env.DB, updated.id);
@@ -183,6 +196,29 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
         } else if (!email.sent) {
           errors.push(email.message);
         }
+      }
+    }
+
+    const remainingAlerts = prioritizeBriefCandidates(Array.from(alertCandidates.values())).slice(
+      0,
+      Math.max(0, maxEmailAlerts - emailedCount)
+    );
+    for (const candidate of remainingAlerts) {
+      if (candidate.emailSentAt) {
+        continue;
+      }
+
+      const current = (await getStoryById(env.DB, candidate.id)) ?? candidate;
+      if (current.emailSentAt) {
+        continue;
+      }
+
+      const email = await sendSignalEmail(env, current);
+      if (email.sent) {
+        await markEmailSent(env.DB, current.id);
+        emailedCount += 1;
+      } else {
+        errors.push(email.message);
       }
     }
 
@@ -462,6 +498,34 @@ function isTriggerWorthy(
   }
 
   return scores.viralPotential >= 78 && scores.politicalWeight >= 70;
+}
+
+function isFastAlertWorthy(
+  signal: RawSignal,
+  scores: Pick<StoredStory, "totalScore" | "politicalWeight" | "viralPotential" | "tags">,
+  alertThreshold: number
+) {
+  if (scores.totalScore >= alertThreshold) {
+    return true;
+  }
+
+  if (isHotSignal(signal) && scores.viralPotential >= 55 && scores.politicalWeight >= 55) {
+    return true;
+  }
+
+  return scores.viralPotential >= 70 && scores.politicalWeight >= 60;
+}
+
+function shouldFastAlertRelatedIssue(story: StoredStory, signal: RawSignal, alertThreshold: number) {
+  if (story.emailSentAt) {
+    return false;
+  }
+
+  if (story.totalScore >= alertThreshold) {
+    return true;
+  }
+
+  return isHotSignal(signal) && story.viralPotential >= 55 && story.politicalWeight >= 55;
 }
 
 function prioritizeBriefCandidates(stories: StoredStory[]) {
