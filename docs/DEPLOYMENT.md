@@ -26,16 +26,16 @@ Copy `.env.example` and set these in local development and production:
 The app exports a Worker `scheduled()` handler in `worker/index.ts`. Configure a cron trigger such as:
 
 ```txt
-*/15 * * * *
+*/5 * * * *
 ```
 
-That checks sources every 15 minutes. Use a lower frequency only if your free-tier limits and Gemini budget can handle it.
+That checks sources every 5 minutes. Scanning RSS/GDELT/open pages uses 0 Gemini tokens; Gemini is used only when a brief is generated.
 
-For stable free-tier scans, start with:
+For early-access free-tier scans, start with:
 
 ```txt
-POLITILY_MAX_SOURCES_PER_RUN=8
-POLITILY_FETCH_TIMEOUT_MS=10000
+POLITILY_MAX_SOURCES_PER_RUN=18
+POLITILY_FETCH_TIMEOUT_MS=6500
 ```
 
 ## Netlify Fallback Cron

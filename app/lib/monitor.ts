@@ -66,8 +66,8 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
   try {
     const threshold = numberEnv(env.POLITILY_SCORE_THRESHOLD, 72);
     const maxBriefs = numberEnv(env.POLITILY_MAX_DEEP_BRIEFS_PER_RUN, 1);
-    const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 10), 12);
-    const fetchTimeoutMs = Math.min(numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 9000), 12000);
+    const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 18), 24);
+    const fetchTimeoutMs = Math.min(numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 6500), 10000);
     const minStoryDate = minStoryDateEnv(env.POLITILY_MIN_STORY_DATE);
     const maxMediaFetches = Math.min(numberEnv(env.POLITILY_MAX_MEDIA_FETCHES_PER_RUN, 6), 10);
     let mediaFetches = 0;
@@ -112,7 +112,7 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
 
       for (const rawSignal of signals) {
         let signal = rawSignal;
-        if (isOlderThanMinimumDate(signal.publishedAt, minStoryDate)) {
+        if (isOlderThanMinimumDate(signal.publishedAt, minStoryDate) || isFromFuture(signal.publishedAt)) {
           continue;
         }
 
@@ -537,8 +537,10 @@ const hotIssueTerms = [
 async function fetchSignals(source: SignalSource, timeoutMs: number): Promise<RawSignal[]> {
   const response = await fetchWithTimeout(source.url, {
     headers: {
-      "User-Agent": "Politily/0.1 political-signal-monitor",
+      "User-Agent": "Mozilla/5.0 (compatible; Politily/0.2; +https://politily.adityakhanna-tcc.workers.dev/)",
       Accept: source.type === "gdelt" ? "application/json" : "application/rss+xml,text/xml,text/html,application/xhtml+xml",
+      "Accept-Language": "en-IN,en;q=0.9",
+      "Cache-Control": "no-cache",
     },
   }, timeoutMs);
 
@@ -577,6 +579,12 @@ async function fetchSignals(source: SignalSource, timeoutMs: number): Promise<Ra
 
 function rotateSources(sources: SignalSource[]) {
   return [...sources].sort((a, b) => {
+    const aFresh = a.category.toLowerCase().includes("freshness") || a.category.toLowerCase().includes("direct newsroom rss") ? 1 : 0;
+    const bFresh = b.category.toLowerCase().includes("freshness") || b.category.toLowerCase().includes("direct newsroom rss") ? 1 : 0;
+    if (aFresh !== bFresh) {
+      return bFresh - aFresh;
+    }
+
     const aHot = a.category.toLowerCase().includes("hot topic") ? 1 : 0;
     const bHot = b.category.toLowerCase().includes("hot topic") ? 1 : 0;
     if (aHot !== bHot) {
@@ -1084,6 +1092,15 @@ function isOlderThanMinimumDate(value: string | null | undefined, minStoryDate: 
 
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && parsed < minStoryDate;
+}
+
+function isFromFuture(value: string | null | undefined) {
+  if (!value) {
+    return false;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && parsed > Date.now() + 2 * 60 * 60 * 1000;
 }
 
 function dateValue(value: string | null | undefined) {

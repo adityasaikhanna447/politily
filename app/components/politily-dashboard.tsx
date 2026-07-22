@@ -293,6 +293,7 @@ export function PolitilyDashboard() {
   const sourceMix = useMemo(() => buildSourceMix(sources), [sources]);
   const portalNames = useMemo(() => buildPortalNames(enrichedStories), [enrichedStories]);
   const latestRun = state?.runs[0];
+  const latestSignalAt = newestStoryTime(enrichedStories);
   const triggeredCount = enrichedStories.filter((story) => story.totalScore >= (state?.config.threshold ?? 72)).length;
   const briefedCount = enrichedStories.filter((story) => story.brief).length;
   const tokenTotal = sumBriefTokens(enrichedStories);
@@ -396,13 +397,14 @@ export function PolitilyDashboard() {
         <div className="system-note">
           <span>{status}. Showing news from {MIN_VISIBLE_STORY_LABEL} onward.</span>
           <strong>
-            {portalNames.length} portals cited in visible stories. D1 tables: 4 normal tables.
+            {freshnessLabel(latestSignalAt)}. {portalNames.length} portals cited. D1 tables: 4 normal tables.
           </strong>
         </div>
 
         <div className="mobile-news-summary">
           <span>Since {MIN_VISIBLE_STORY_LABEL}</span>
           <strong>{enrichedStories.length} signals</strong>
+          <strong>{freshnessShortLabel(latestSignalAt)}</strong>
           <strong>{portalNames.length} portals</strong>
           <strong>{formatTokens(tokenTotal)} tokens</strong>
         </div>
@@ -1625,6 +1627,42 @@ function formatTokens(value: number) {
   }
 
   return String(value);
+}
+
+function newestStoryTime(stories: EnrichedStory[]) {
+  const newest = stories.reduce((max, story) => {
+    const value = dateValue(story.publishedAt || story.detectedAt);
+    return Math.max(max, value);
+  }, 0);
+
+  return newest || null;
+}
+
+function freshnessLabel(value: number | null) {
+  if (!value) {
+    return "No successful signal yet";
+  }
+
+  const minutes = Math.max(0, Math.round((Date.now() - value) / 60000));
+  if (minutes < 60) {
+    return `Fresh: latest signal ${minutes} min ago`;
+  }
+
+  const hours = Math.round(minutes / 60);
+  if (hours <= 3) {
+    return `Freshness watch: latest signal ${hours}h ago`;
+  }
+
+  return `STALE: latest signal ${hours}h ago`;
+}
+
+function freshnessShortLabel(value: number | null) {
+  if (!value) {
+    return "No signal";
+  }
+
+  const minutes = Math.max(0, Math.round((Date.now() - value) / 60000));
+  return minutes < 60 ? `${minutes}m fresh` : `${Math.round(minutes / 60)}h old`;
 }
 
 function todayDateInput() {
