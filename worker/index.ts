@@ -14,9 +14,13 @@ interface Env {
   ALERT_FROM_EMAIL?: string;
   APP_BASE_URL?: string;
   POLITILY_SCORE_THRESHOLD?: string;
+  POLITILY_ALERT_MIN_SCORE?: string;
   POLITILY_MAX_DEEP_BRIEFS_PER_RUN?: string;
+  POLITILY_MAX_EMAIL_ALERTS_PER_RUN?: string;
   POLITILY_MAX_SOURCES_PER_RUN?: string;
   POLITILY_FETCH_TIMEOUT_MS?: string;
+  POLITILY_MIN_STORY_DATE?: string;
+  POLITILY_MAX_MEDIA_FETCHES_PER_RUN?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
