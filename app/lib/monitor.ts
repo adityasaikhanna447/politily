@@ -1,6 +1,7 @@
 import { getDemoState } from "./demo-data";
-import { sendBriefEmail, sendSignalEmail } from "./email";
+import { sendBriefEmail, sendSignalEmail, sendStrategicDigestEmail } from "./email";
 import { generateBriefWithGemini } from "./gemini";
+import { areSameIssue, issueSimilarity } from "./issues";
 import { fingerprintFor, scoreSignal, titleSimilarity } from "./scoring";
 import {
   addStorySource,
@@ -13,11 +14,13 @@ import {
   insertStory,
   listRecentStories,
   listSources,
+  listStoriesInDateRange,
   listStorySources,
   markEmailSent,
   markStaleRunsFailed,
   newId,
   saveBrief,
+  strengthenStoryFromSignal,
   updateSourceChecked,
 } from "./storage";
 import type {
@@ -33,7 +36,7 @@ export function getRuntimeConfig(env: RuntimeEnv): DashboardState["config"] {
   const threshold = numberEnv(env.POLITILY_SCORE_THRESHOLD, 72);
   return {
     threshold,
-    alertThreshold: Math.min(threshold, numberEnv(env.POLITILY_ALERT_MIN_SCORE, 60)),
+    alertThreshold: numberEnv(env.POLITILY_ALERT_MIN_SCORE, 85),
     geminiReady: Boolean(env.GEMINI_API_KEY),
     emailReady: Boolean(env.RESEND_API_KEY && env.ALERT_EMAIL && env.ALERT_FROM_EMAIL),
     storageReady: Boolean(env.DB),
@@ -67,8 +70,8 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
 
   try {
     const threshold = numberEnv(env.POLITILY_SCORE_THRESHOLD, 72);
-    const alertThreshold = Math.min(threshold, numberEnv(env.POLITILY_ALERT_MIN_SCORE, 60));
-    const maxBriefs = numberEnv(env.POLITILY_MAX_DEEP_BRIEFS_PER_RUN, 1);
+    const alertThreshold = numberEnv(env.POLITILY_ALERT_MIN_SCORE, 85);
+    const maxBriefs = numberEnv(env.POLITILY_MAX_DEEP_BRIEFS_PER_RUN, 0);
     const maxEmailAlerts = Math.min(numberEnv(env.POLITILY_MAX_EMAIL_ALERTS_PER_RUN, 5), 12);
     const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 18), 24);
     const fetchTimeoutMs = Math.min(numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 6500), 10000);
@@ -126,6 +129,8 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
           signal = await hydrateSignalMedia(signal, Math.min(fetchTimeoutMs, 3200));
         }
 
+        const scores = scoreSignal(signal, recentStories);
+        const triggerWorthy = isTriggerWorthy(signal, scores, threshold);
         const fingerprint = fingerprintFor(signal);
         const existing = await getStoryByFingerprint(env.DB, fingerprint);
         const related = existing ?? findRelatedStory(signal, recentStories);
@@ -138,14 +143,26 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
             sourceName: signal.sourceName,
             publishedAt: signal.publishedAt ?? null,
           });
-          if (shouldFastAlertRelatedIssue(related, signal, alertThreshold)) {
-            alertCandidates.set(related.id, related);
+          await strengthenStoryFromSignal(env.DB, related.id, {
+            summary: signal.summary,
+            imageUrl: signal.imageUrl ?? null,
+            articleExcerpt: signal.articleExcerpt || signal.summary,
+            status: triggerWorthy ? "triggered" : "watching",
+            ...scores,
+          });
+          const updatedRelated = (await getStoryById(env.DB, related.id)) ?? {
+            ...related,
+            totalScore: Math.max(related.totalScore, scores.totalScore),
+            viralPotential: Math.max(related.viralPotential, scores.viralPotential),
+            politicalWeight: Math.max(related.politicalWeight, scores.politicalWeight),
+          };
+          updateRecentStory(recentStories, updatedRelated);
+          if (shouldFastAlertRelatedIssue(updatedRelated, signal, alertThreshold)) {
+            alertCandidates.set(updatedRelated.id, updatedRelated);
           }
           continue;
         }
 
-        const scores = scoreSignal(signal, recentStories);
-        const triggerWorthy = isTriggerWorthy(signal, scores, threshold);
         const story: StoredStory = {
           id: newId("story"),
           fingerprint,
@@ -189,12 +206,14 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
       const updated = await generateAndSaveBrief(env, story.id);
       if (updated?.brief) {
         alertCandidates.delete(updated.id);
-        const email = await sendBriefEmail(env, updated, updated.brief);
-        if (email.sent && env.DB) {
-          await markEmailSent(env.DB, updated.id);
-          emailedCount += 1;
-        } else if (!email.sent) {
-          errors.push(email.message);
+        if (updated.totalScore >= alertThreshold) {
+          const email = await sendBriefEmail(env, updated, updated.brief);
+          if (email.sent && env.DB) {
+            await markEmailSent(env.DB, updated.id);
+            emailedCount += 1;
+          } else if (!email.sent) {
+            errors.push(email.message);
+          }
         }
       }
     }
@@ -264,6 +283,24 @@ export async function generateAndSaveBrief(env: RuntimeEnv, storyId: string) {
     status: "briefed" as const,
     sourceLinks: briefSources,
   };
+}
+
+export async function sendScheduledDigest(env: RuntimeEnv) {
+  if (!env.DB) {
+    return {
+      sent: false,
+      message: "Scheduled digest skipped. Storage is not connected.",
+    };
+  }
+
+  await ensureDatabase(env.DB);
+  const window = todayDigestWindow();
+  const stories = await listStoriesInDateRange(env.DB, window.startIso, window.endIso, 100);
+  return sendStrategicDigestEmail(env, stories, {
+    startIso: window.startIso,
+    endIso: window.endIso,
+    label: window.label,
+  });
 }
 
 export async function generateResearchBriefForQuery(env: RuntimeEnv, rawQuery: string) {
@@ -449,21 +486,7 @@ async function fetchResearchSignals(query: string): Promise<RawSignal[]> {
 }
 
 function isRelatedForBrief(story: StoredStory, candidate: StoredStory) {
-  const storyText = `${story.title} ${story.summary}`.toLowerCase();
-  const candidateText = `${candidate.title} ${candidate.summary}`.toLowerCase();
-
-  if (
-    hasAny(storyText, ["cjp", "chalo sansad", "sansad chalo", "cockroach janta party"]) &&
-    hasAny(candidateText, ["cjp", "chalo sansad", "sansad chalo", "cockroach janta party"])
-  ) {
-    return true;
-  }
-
-  if (hasAny(storyText, ["bankipur", "bypoll", "by-election", "byelection"]) && hasAny(candidateText, ["bankipur", "bypoll", "by-election", "byelection"])) {
-    return true;
-  }
-
-  return titleSimilarity(story.title, candidate.title) >= 0.56;
+  return areSameIssue(story, candidate) || issueSimilarity(story, candidate) >= 0.48 || titleSimilarity(story.title, candidate.title) >= 0.56;
 }
 
 function hasAny(text: string, terms: string[]) {
@@ -505,15 +528,7 @@ function isFastAlertWorthy(
   scores: Pick<StoredStory, "totalScore" | "politicalWeight" | "viralPotential" | "tags">,
   alertThreshold: number
 ) {
-  if (scores.totalScore >= alertThreshold) {
-    return true;
-  }
-
-  if (isHotSignal(signal) && scores.viralPotential >= 55 && scores.politicalWeight >= 55) {
-    return true;
-  }
-
-  return scores.viralPotential >= 70 && scores.politicalWeight >= 60;
+  return scores.totalScore >= alertThreshold;
 }
 
 function shouldFastAlertRelatedIssue(story: StoredStory, signal: RawSignal, alertThreshold: number) {
@@ -521,11 +536,7 @@ function shouldFastAlertRelatedIssue(story: StoredStory, signal: RawSignal, aler
     return false;
   }
 
-  if (story.totalScore >= alertThreshold) {
-    return true;
-  }
-
-  return isHotSignal(signal) && story.viralPotential >= 55 && story.politicalWeight >= 55;
+  return story.totalScore >= alertThreshold || scoreSignal(signal, [story]).totalScore >= alertThreshold;
 }
 
 function prioritizeBriefCandidates(stories: StoredStory[]) {
@@ -731,28 +742,38 @@ function findRelatedStory(signal: RawSignal, recentStories: StoredStory[]) {
     return null;
   }
 
-  if (isHotSignal(signal)) {
-    const hotMatch = recentStories
-      .slice(0, 120)
-      .find((story) => isHotStory(story) && isRelatedForBrief(story, signalToStoryLike(signal)));
-    if (hotMatch) {
-      return hotMatch;
-    }
+  const issueMatch = recentStories
+    .slice(0, 140)
+    .find((story) => areSameIssue(story, signalToStoryLike(signal)));
+  if (issueMatch) {
+    return issueMatch;
   }
 
   let best: { story: StoredStory; similarity: number } | null = null;
   for (const story of recentStories.slice(0, 100)) {
-    const similarity = titleSimilarity(signal.title, story.title);
+    const similarity = Math.max(
+      titleSimilarity(signal.title, story.title),
+      issueSimilarity(signalToStoryLike(signal), story)
+    );
     if (!best || similarity > best.similarity) {
       best = { story, similarity };
     }
   }
 
-  if (best && best.similarity >= 0.72) {
+  if (best && best.similarity >= 0.48) {
     return best.story;
   }
 
   return null;
+}
+
+function updateRecentStory(stories: StoredStory[], updated: StoredStory) {
+  const index = stories.findIndex((story) => story.id === updated.id);
+  if (index >= 0) {
+    stories[index] = updated;
+  } else {
+    stories.unshift(updated);
+  }
 }
 
 function signalToStoryLike(signal: RawSignal): StoredStory {
@@ -1147,6 +1168,46 @@ function minStoryDateEnv(value?: string) {
 
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function todayDigestWindow() {
+  const today = currentIstDateString();
+  const startIso = new Date(`${today}T00:00:00.000+05:30`).toISOString();
+  const endIso = new Date().toISOString();
+  return {
+    startIso,
+    endIso,
+    label: `${formatHumanDate(today)} till ${formatIstTime(endIso)}`,
+  };
+}
+
+function currentIstDateString() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+  }).formatToParts(new Date());
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function formatHumanDate(value: string) {
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  }).format(new Date(`${value}T00:00:00.000+05:30`));
+}
+
+function formatIstTime(value: string) {
+  return `${new Intl.DateTimeFormat("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  }).format(new Date(value))} IST`;
 }
 
 function isOlderThanMinimumDate(value: string | null | undefined, minStoryDate: number) {

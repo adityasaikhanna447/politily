@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DashboardState, SignalSource, StoredStory, StorySourceLink } from "../lib/types";
 import { getDemoState } from "../lib/demo-data";
+import {
+  canonicalIssueKey,
+  canonicalIssueLabel,
+  issueSimilarity as sharedIssueSimilarity,
+  issueTokens as sharedIssueTokens,
+} from "../lib/issues";
 
 type View = "overview" | "watch" | "brief" | "sources" | "setup";
 type SortKey = "rank" | "recent" | "oldest" | "viral" | "political" | "source";
@@ -129,6 +135,7 @@ const SHOW_STORY_IMAGES = false;
 export function PolitilyDashboard() {
   const [state, setState] = useState<DashboardState | null>(null);
   const [selectedId, setSelectedId] = useState("");
+  const [detailOpen, setDetailOpen] = useState(false);
   const [view, setView] = useState<View>("watch");
   const [status, setStatus] = useState("Connecting to Politily");
   const [busy, setBusy] = useState(false);
@@ -151,8 +158,15 @@ export function PolitilyDashboard() {
       }
 
       const next = (await response.json()) as DashboardState;
+      const urlStory = storyFromUrl();
       setState(next);
-      setSelectedId((current) => current || storyFromUrl() || next.stories[0]?.id || "");
+      setSelectedId((current) => current || urlStory || next.stories[0]?.id || "");
+      if (urlStory && viewFromUrl() === "issue") {
+        setDetailOpen(true);
+      }
+      if (urlStory && viewFromUrl() === "brief") {
+        setView("brief");
+      }
       setStatus(next.demoMode ? "Demo mode: storage not connected" : "Live monitor ready");
     } catch (error) {
       const fallback = getDemoState();
@@ -296,6 +310,26 @@ export function PolitilyDashboard() {
     }
   }
 
+  function openIssue(storyId: string) {
+    setSelectedId(storyId);
+    setDetailOpen(true);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("story", storyId);
+      url.searchParams.set("view", "issue");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }
+
+  function closeIssue() {
+    setDetailOpen(false);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("view");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }
+
   const stories = state?.stories ?? [];
   const sources = state?.sources ?? [];
   const enrichedStories = useMemo(
@@ -336,6 +370,13 @@ export function PolitilyDashboard() {
     filteredStories.find((story) => story.id === selectedId) ??
     filteredStories[0] ??
     (hasActiveFilter ? undefined : enrichedStories[0]);
+  const selectedIssueCluster = useMemo(
+    () =>
+      selectedStory
+        ? buildIssueClusters(enrichedStories).find((cluster) => cluster.stories.some((story) => story.id === selectedStory.id))
+        : undefined,
+    [enrichedStories, selectedStory]
+  );
 
   return (
     <main className="orm-shell">
@@ -458,7 +499,7 @@ export function PolitilyDashboard() {
             onGenerate={generateBrief}
             onResearchQuery={generateResearchBrief}
             onScoreFocus={setScoreFocus}
-            onSelect={setSelectedId}
+            onSelect={openIssue}
             query={query}
             scoreFocus={scoreFocus}
             selectedStory={selectedStory}
@@ -495,6 +536,19 @@ export function PolitilyDashboard() {
           busy={busy}
           onGenerate={generateBrief}
           onOpenBrief={() => setView("brief")}
+          story={selectedStory}
+        />
+      ) : null}
+      {detailOpen && selectedStory ? (
+        <IssueDetailPage
+          busy={busy}
+          cluster={selectedIssueCluster}
+          onClose={closeIssue}
+          onGenerate={generateBrief}
+          onOpenBrief={() => {
+            setView("brief");
+            closeIssue();
+          }}
           story={selectedStory}
         />
       ) : null}
@@ -555,6 +609,116 @@ function SelectedStoryFooter({
         </button>
       </div>
     </footer>
+  );
+}
+
+function IssueDetailPage({
+  story,
+  cluster,
+  busy,
+  onGenerate,
+  onOpenBrief,
+  onClose,
+}: {
+  story: EnrichedStory;
+  cluster?: IssueCluster;
+  busy: boolean;
+  onGenerate: (storyId: string) => void;
+  onOpenBrief: () => void;
+  onClose: () => void;
+}) {
+  const sourceTrail = cluster?.sourceLinks.length ? cluster.sourceLinks : uniqueStoryLinks(story.sourceLinks ?? []);
+  const relatedReports = cluster?.stories.filter((item) => item.id !== story.id).slice(0, 8) ?? [];
+
+  return (
+    <section aria-label="Issue detail" className="issue-detail-overlay">
+      <article className="issue-detail-page">
+        <div className="issue-detail-toolbar">
+          <button className="btn btn-ghost" onClick={onClose} type="button">
+            Back to queue
+          </button>
+          <div className="issue-detail-actions">
+            <button className="btn btn-gold" disabled={busy} onClick={() => onGenerate(story.id)} type="button">
+              {story.brief ? "Refresh brief" : "Generate brief"}
+            </button>
+            <button className="btn btn-ghost" onClick={onOpenBrief} type="button">
+              Brief page
+            </button>
+          </div>
+        </div>
+
+        <header className="issue-detail-head">
+          <div>
+            <span className="section-chip">{story.topics[0]?.label || "Politics"}</span>
+            <h1>{cluster?.label || story.title}</h1>
+            <p>{story.whatHappenedShort}</p>
+            <div className="issue-proof-row">
+              <strong>{cluster?.sources.length ?? story.sourceNames.length} sources</strong>
+              <span>{cluster?.stories.length ?? 1} related report(s)</span>
+              <span>{formatRelativeDate(story.detectedAt)}</span>
+            </div>
+          </div>
+          <div className="reach-box">
+            <strong>{story.reachScore}</strong>
+            <span>Indian audience score</span>
+          </div>
+        </header>
+
+        <div className="issue-detail-grid">
+          <section className="panel span-2">
+            <PanelTitle title="Issue bio" />
+            <p className="muted-copy">{story.newsSnippet}</p>
+            <div className="action-row">
+              <a className="btn btn-ghost" href={`/api/export?storyId=${story.id}`}>
+                Export DOCX
+              </a>
+              <a className="btn btn-ghost" href={story.url} rel="noreferrer" target="_blank">
+                Open lead source
+              </a>
+            </div>
+          </section>
+          <ResearchTile label="Video angle" value={story.videoAngle} />
+          <ResearchTile label="Verification state" value={story.verificationState} />
+          <ResearchTile label="Audience reach why" value={story.reachReason} />
+          <ResearchTile label="Token use" value={briefTokenLabel(story.brief)} />
+          <section className="panel span-2">
+            <PanelTitle title="Score grounding" />
+            <div className="score-grid compact">
+              <ScoreReadout label="Novelty" value={story.noveltyScore} />
+              <ScoreReadout label="Political" value={story.politicalWeight} />
+              <ScoreReadout label="Geo" value={story.geopoliticalRelevance} />
+              <ScoreReadout label="Viral" value={story.viralPotential} />
+            </div>
+          </section>
+          {relatedReports.length ? (
+            <section className="panel span-2">
+              <PanelTitle title="Related reports inside this issue" />
+              <div className="related-report-list">
+                {relatedReports.map((report) => (
+                  <a href={report.url} key={report.id} rel="noreferrer" target="_blank">
+                    <span>{report.sourceName}</span>
+                    <strong>{report.title}</strong>
+                  </a>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          <section className="panel span-2">
+            <SourceTrail links={sourceTrail} />
+          </section>
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function ScoreReadout({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="score-card readonly">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <div className="mini-meter"><span style={{ width: `${value}%` }} /></div>
+    </div>
   );
 }
 
@@ -1437,81 +1601,19 @@ function buildIssueClusters(stories: EnrichedStory[]) {
 }
 
 function issueKey(story: EnrichedStory) {
-  const text = `${story.title} ${story.summary} ${story.tags.join(" ")}`.toLowerCase();
-  if (/cjp|cockroach janta party|chalo sansad|sansad chalo/.test(text)) {
-    return "issue:cjp-sansad-chalo";
-  }
-  if (/bankipur|bypoll|by-election|byelection/.test(text)) {
-    return "issue:bankipur-bypoll";
-  }
-  if (/jailed leaders|removing jailed leaders|130th constitutional|office.*jailed/.test(text)) {
-    return "issue:jailed-leaders-bill";
-  }
-  if (/rahul gandhi/.test(text)) {
-    return "issue:rahul-gandhi";
-  }
-
-  const topic = story.topics[0]?.id || "politics";
-  const keywords = issueTokens(story.title).slice(0, 5).join("-");
-  return `${topic}:${keywords || story.fingerprint}`;
+  return canonicalIssueKey(story);
 }
 
 function issueLabel(story: EnrichedStory) {
-  const text = `${story.title} ${story.summary}`.toLowerCase();
-  if (/cjp|cockroach janta party|chalo sansad|sansad chalo/.test(text)) {
-    return "CJP / Sansad Chalo protest";
-  }
-  if (/bankipur|bypoll|by-election|byelection/.test(text)) {
-    return "Bankipur bypoll and Bihar party strategy";
-  }
-  if (/jailed leaders|removing jailed leaders/.test(text)) {
-    return "Bill on jailed leaders holding office";
-  }
-
-  return removeSourceSuffix(story.title);
+  return canonicalIssueLabel(story);
 }
 
 function storyIssueSimilarity(left: EnrichedStory, right: EnrichedStory) {
-  const leftTokens = new Set(issueTokens(left.title));
-  const rightTokens = new Set(issueTokens(right.title));
-  if (!leftTokens.size || !rightTokens.size) {
-    return 0;
-  }
-
-  const shared = Array.from(leftTokens).filter((token) => rightTokens.has(token)).length;
-  return shared / Math.max(leftTokens.size, rightTokens.size);
+  return sharedIssueSimilarity(left, right);
 }
 
 function issueTokens(value: string) {
-  const stopWords = new Set([
-    "about",
-    "after",
-    "against",
-    "amid",
-    "and",
-    "are",
-    "from",
-    "have",
-    "india",
-    "indian",
-    "into",
-    "news",
-    "over",
-    "that",
-    "the",
-    "this",
-    "what",
-    "when",
-    "where",
-    "with",
-    "why",
-  ]);
-
-  return cleanDisplayText(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, " ")
-    .split(/\s+/)
-    .filter((token) => token.length > 3 && !stopWords.has(token));
+  return sharedIssueTokens(value);
 }
 
 function removeSourceSuffix(value: string) {
@@ -1786,6 +1888,14 @@ function storyFromUrl() {
   }
 
   return new URLSearchParams(window.location.search).get("story") ?? "";
+}
+
+function viewFromUrl() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return new URLSearchParams(window.location.search).get("view") ?? "";
 }
 
 function formatDateTime(value: string) {

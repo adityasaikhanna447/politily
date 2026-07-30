@@ -1,6 +1,6 @@
-UPLOAD THIS FOLDER TO GITHUB
+UPLOAD THIS CLOUDFLARE-ONLY FOLDER TO GITHUB
 
-REFRESHED FOR THE NEWSROOM WAR ROOM UPGRADE ON 2026-07-13.
+REFRESHED FOR THE POLITILY NEWSROOM WAR ROOM ON 2026-07-25.
 
 What to do:
 
@@ -10,19 +10,31 @@ What to do:
 4. Choose Private if this is only for you, or Public if you want open source.
 5. Click Create repository.
 6. Click uploading an existing file.
-7. Open this folder on your computer:
-   01_UPLOAD_THIS_TO_GITHUB
-8. Select everything INSIDE this folder.
+7. Open this exact folder on your computer:
+   C:\Users\Admin\Documents\Politily\_BEGINNER_UPLOAD_PACKAGE\01_UPLOAD_THIS_TO_GITHUB
+8. Select everything INSIDE this folder only.
 9. Drag all selected files/folders into GitHub.
-10. Commit message: Upgrade Politily newsroom war room
+10. Commit message: Cloudflare-only Politily cleanup
 11. Click Commit changes.
 
 Important:
 Do not upload the parent folder named _BEGINNER_UPLOAD_PACKAGE.
 Only upload the contents of 01_UPLOAD_THIS_TO_GITHUB.
-If GitHub refuses hidden files like .openai or .gitignore, do not panic.
-The important visible file openai-hosting.json is now included for Cloudflare.
+There are no Netlify files in this package now.
+There are no OpenAI Sites hosting files in this package now.
+If GitHub refuses `.gitignore`, do not panic; the app can still deploy.
 
 After GitHub upload:
 Cloudflare should automatically build the new version from GitHub.
 Open Cloudflare > Workers & Pages > politily > Deployments and wait for a green success check.
+
+Cloudflare build settings:
+Build command: npm run build
+Deploy command: npx wrangler deploy --config dist/server/wrangler.json
+Root directory: /
+
+Email secrets needed in Cloudflare:
+GEMINI_API_KEY
+RESEND_API_KEY
+ALERT_EMAIL
+ALERT_FROM_EMAIL

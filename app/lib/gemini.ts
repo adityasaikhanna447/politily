@@ -190,13 +190,28 @@ Research editor rules:
 11. Do not imitate any living creator, channel, or protected style. Use an original serious Indian political explainer voice.
 12. If source text is thin or blocked, clearly label the brief as thin and convert missing facts into a concrete verification plan.
 13. If this is an ad-hoc Politily Research Brain query or an upcoming topic, do not pretend a confirmed event happened. Build a critical research memo: current source trail, what is unknown, what must be watched, what would make it video-worthy, and what must be true before spending creator time.
+14. Make the research chain deep for every topic, not only resignations or minister accountability. For any issue, build actor background, institution chain, regional history, data trail, primary proof, narrative incentives, counter-view, and creator risk.
+15. If a person's name appears, explain their current role, relevant past role, political/institutional background, incentive, prior controversy/reform link if relevant, and why their name matters to this exact issue.
+16. If a department, ministry, police force, court, party, university, election body, regulator, or agency appears, explain its formal power, chain of command, practical limits, previous record, and what document proves action or inaction.
+
+Deep research chain to apply to every issue type:
+- Election/bypoll: constituency history, past margins, candidate background, caste/class/local blocs, alliances, turnout, affidavits, ECI schedule, local issues, and why the seat matters beyond the headline.
+- Protest/public order: organisers, demands, route/permission, police order, legal section, arrests/detentions/injuries, official response, prior grievance timeline, and whether party amplification changes the story.
+- Court/legal rights: petitioners, respondents, bench/court, order text, legal sections, precedent, next hearing, enforcement impact, and what both sides legally claim.
+- Parliament/bill/policy: exact clause/change, sponsoring ministry, older law/status quo, committee history, delegated power, winners/losers, federal/rights/industry impact, and amendment/watch items.
+- Party politics: faction, leader incentives, alliance math, organisational history, election calendar, public messaging, who gains narrative power, and what local reporting proves.
+- Governance/administration: department mandate, budget/data, official order, officer/ministry chain, delivery failure/success metric, affected citizen group, and remedy pathway.
+- Censorship/culture/public order: content at issue, legal basis, complainants, state response, free speech/public order claim, affected community, previous bans, and what proves propaganda versus verified harm.
+- Geopolitics/security: official statements, timeline, treaty/border/trade/security stakes, domestic political incentive, international reaction, and what primary diplomatic record exists.
 
 Before writing, ask yourself and answer inside the JSON:
 - What exactly happened, where, when, who triggered it, and who responded?
 - Why did this escalate now?
 - Which institution had power or duty here?
-- Who can resign, who cannot practically resign, who can order an inquiry, and what is the real accountability chain?
+- What is the background of every important person, party, institution, department, court, agency, constituency, or region named in the source trail?
+- What is the real accountability or decision chain: who can resign, who can be transferred, who can order inquiry/reform, who can pass a law, who can enforce, who can delay, who can benefit?
 - What numbers define scale: vote margins, arrests, turnout, affected students, budget, seats, dates, court listings, district data, or legal sections?
+- What happened before this headline: previous cases, older law, earlier protest, past election result, prior officer/minister/leader, earlier government response, or regional tension?
 - Which side benefits if this narrative spreads?
 - What would the strongest critic say, and what would the strongest defence say?
 - What primary record would prove or weaken the story?
@@ -232,9 +247,9 @@ Return only valid JSON with this exact shape:
   "hook": "one strong opening line that names the core political tension",
   "whatHappened": "180-260 words. Plain-language issue summary with exact date/place/actors/trigger/response. Combine related source headlines/excerpts into one event narrative.",
   "whyItMatters": "180-260 words. Political significance for governance, elections, party strategy, rights, public order, youth/public mood, or institution credibility.",
-  "historicalContext": "220-380 words. Specific background, previous events, relevant law/policy/election history, and parallels. If unknown, name the exact missing record.",
+  "historicalContext": "260-440 words. Specific background, previous events, relevant law/policy/election history, institutional memory, key actor background, and parallels. If unknown, name the exact missing record.",
   "geographicalContext": "places, institutions, regions, constituencies, or international context",
-  "keyPeople": ["person or institution"],
+  "keyPeople": ["person or institution - current role/background - why they matter here - what must be verified"],
   "factsAndFigures": ["8-14 verifiable facts or numbers; if unavailable, name the exact dataset/document needed and why it matters"],
   "sourceConfidence": "how reliable the available source base is",
   "evidenceGrade": "primary-backed | multi-source | reported | disputed | thin",
@@ -242,19 +257,19 @@ Return only valid JSON with this exact shape:
   "claimMatrix": ["8-12 entries: claim - who says it - evidence level - what would verify/refute it"],
   "primaryDocuments": ["official order, court record, filing, statement, dataset, or document to obtain"],
   "missingEvidence": ["specific missing source or unresolved fact"],
-  "regionalContext": "state/regional/social/history context needed to understand the story",
+  "regionalContext": "state/regional/social/history context needed to understand the story, including local power blocs, prior tensions, past results, or affected communities when relevant",
   "verificationProtocol": ["step a researcher should do before publishing"],
   "narratives": ["major perspective or competing interpretation"],
   "whatHappensNext": ["watch item"],
   "audienceReachScore": 0,
   "audienceReachReason": "why Indian audience may or may not care",
   "researchDepthScore": 0,
-  "dataPoints": ["specific data point, statistic, historical number, date, law section, constituency figure, arrest/count/case detail, or exact dataset to pull"],
-  "researchQuestions": ["hard question a serious researcher should ask before scripting"],
-  "institutionalContext": "who has formal power, who has political responsibility, what the accountability chain is, and what action is realistically possible",
-  "accountabilityMap": ["actor/institution - formal role - political responsibility - evidence needed"],
-  "stakeholderMap": ["stakeholder - incentive - public position or likely concern"],
-  "powerAnalysis": "who gains, who loses, who controls information, who controls process, and why the timing matters",
+  "dataPoints": ["specific data point, statistic, historical number, date, law section, constituency figure, arrest/count/case detail, actor background fact, previous-office detail, or exact dataset to pull"],
+  "researchQuestions": ["hard question a serious researcher should ask before scripting, covering actor background, institution chain, data trail, local context, and narrative incentive"],
+  "institutionalContext": "who has formal power, who has political responsibility, what the accountability/decision chain is, what action is realistically possible, and what document proves it",
+  "accountabilityMap": ["actor/institution - current role/background - formal power - political incentive/accountability - evidence needed"],
+  "stakeholderMap": ["stakeholder - background/incentive - public position or likely concern - how they benefit or lose"],
+  "powerAnalysis": "who gains, who loses, who controls information, who controls process, what past context makes this sensitive, and why the timing matters",
   "counterArguments": ["strongest defence/counter-view and what evidence would test it"],
   "openQuestions": ["unanswered but important question"],
   "monitoringQueries": ["exact search query, source, institution, or record to monitor next"],
@@ -269,7 +284,7 @@ Return only valid JSON with this exact shape:
     "viralPotential": "why it can or cannot travel online",
     "audienceReach": "why this reaches Indian viewers"
   },
-  "videoScript": "900-1400 words in Roman Hindi/Hinglish, not Devanagari. Structure: cold open, exact event, chronology, historical background, data, institutional accountability, strongest government/defence view, strongest critic/protester/opposition view, what is unverified, why it matters for Indian viewers, what happens next, CTA. Sound like a serious creator research script, not a school assignment.",
+  "videoScript": "1100-1700 words in Roman Hindi/Hinglish, not Devanagari. Structure: cold open, exact event, why now, actor background, institutional/decision chain, chronology, historical/regional background, data, strongest government/defence view, strongest critic/protester/opposition view, what is unverified, why it matters for Indian viewers, what happens next, CTA. Sound like a serious creator research script, not a school assignment.",
   "cta": "short Roman Hindi/Hinglish call to action",
   "caution": "what not to overclaim",
   "citedUrls": ["url"]
@@ -616,12 +631,18 @@ function inferStoryTopic(story: StoredStory) {
   const base = {
     hook: "This story is a political signal, not just a news item.",
     whyItMatters:
-      "It matters because it can affect public trust, party positioning, governance accountability, or voter perception.",
+      "It matters because it can affect public trust, party positioning, governance accountability, legal rights, local power, or voter perception.",
     historicalContext:
-      "The deeper context should be built from the related institution, earlier policy decisions, party positions, and previous public reactions.",
+      "The deeper context should be built from the named actors, related institution, earlier policy decisions, regional history, party positions, previous public reactions, and the last comparable controversy or election/legal moment.",
     regionalContext:
-      "Map the affected place, institution, community, and political stakeholders before making a public narrative.",
-    keyPeople: ["Primary institution", "ruling side", "opposition response", "affected public group", "independent expert"],
+      "Map the affected place, institution, community, local power blocs, previous tension, and political stakeholders before making a public narrative.",
+    keyPeople: [
+      "Primary institution - formal role and document to verify",
+      "Named leader/official - current role, relevant past role, incentive, and evidence needed",
+      "Ruling side - public defence and political risk",
+      "Opposition/critic - claim, incentive, and evidence needed",
+      "Affected public group - lived impact and proof required",
+    ],
     timeline: ["Next - compare official record, agency report, national media, and regional reporting."],
     claimMatrix: [
       "Political meaning - may be framed differently by government, opposition, affected groups, and media - compare all positions.",
@@ -642,27 +663,32 @@ function inferStoryTopic(story: StoredStory) {
       "What exactly happened, on what date, in which institution/place, and who first confirmed it?",
       "Which part is confirmed record and which part is political framing?",
       "Who has formal responsibility and who has only political accountability?",
+      "What is the background of every named person, institution, party, court, agency, constituency, or affected group?",
+      "What earlier case, older policy, previous election result, prior protest, or regional tension explains why this matters now?",
       "What data point would prove scale or public impact?",
       "Which actor benefits if this narrative dominates the day?",
+      "Who controls the next step: inquiry, transfer, resignation, law, court order, police action, party decision, ECI record, or administrative remedy?",
       "What is the strongest counter-argument from the other side?",
       "What primary document must be opened before recording?",
       "What should the creator avoid overclaiming?",
     ],
     institutionalContext:
-      "Identify the institution with formal authority, the official with operational responsibility, the political executive facing accountability, and the record that can prove action or inaction.",
+      "Identify the institution with formal authority, the official with operational responsibility, the political executive facing accountability, the practical limits of each actor, and the record that can prove action or inaction.",
     accountabilityMap: [
-      "Primary institution - formal duty - verify through order, notification, filing, or statement.",
-      "Political executive/party - public accountability - verify through direct quote and official response.",
-      "Affected public group - lived impact - verify through local reporting and direct evidence.",
+      "Primary institution - formal duty and chain of command - verify through order, notification, filing, or statement.",
+      "Named leader/official - current role, past relevant role, and incentive - verify through official bio, portfolio record, and direct quote.",
+      "Political executive/party - public accountability and narrative risk - verify through direct quote and official response.",
+      "Affected public group - lived impact and remedy demand - verify through local reporting and direct evidence.",
     ],
     stakeholderMap: [
       "Government or ruling side - wants control, order, and legitimacy.",
       "Opposition or critics - wants accountability and narrative pressure.",
       "Affected public - wants remedy, clarity, and proof.",
+      "Institution or agency - wants legal defensibility, process control, and reputation protection.",
       "Media/platform audience - wants a clear conflict and credible evidence.",
     ],
     powerAnalysis:
-      "The core power question is who controls the official record, who controls the public narrative, and who pays the political cost if evidence contradicts the dominant framing.",
+      "The core power question is who controls the official record, who controls the next decision, who controls the public narrative, what past context makes the issue sensitive, and who pays the political cost if evidence contradicts the dominant framing.",
     counterArguments: [
       "Government/authority defence - the action may be routine, legal, or based on incomplete public information; test it against the exact order and timeline.",
       "Critic/opposition claim - the action may show accountability failure or political misuse; test it against documents, data, and independent reporting.",
@@ -670,7 +696,8 @@ function inferStoryTopic(story: StoredStory) {
     storytellingBeats: [
       "Cold open: the one fact that makes the audience stop scrolling.",
       "Event: what happened, where, when, and who is involved.",
-      "History: the older tension that makes this politically loaded.",
+      "Actor background: why the named people/institutions matter in this exact story.",
+      "History: the older tension, earlier law, previous result, or prior controversy that makes this politically loaded.",
       "Evidence: documents, data, source trail, and what is still missing.",
       "Both sides: strongest defence and strongest criticism.",
       "Hard question: what must be answered before the narrative is trusted.",
@@ -939,7 +966,9 @@ History aur context: ${topic.historicalContext}
 
 Institutional accountability: ${topic.institutionalContext}
 
-Evidence line: abhi isse final proof mat maaniye. Pehle primary document, official statement, agency copy, aur regional reporting compare karni hogi. Agar police order, ECI notice, court record, ministry reply, ya candidate affidavit missing hai, to script me clearly bolna hoga ki evidence thin hai.
+Research chain: is mudde me pehle actors ka background check hoga - kaun current role me hai, uska past role kya raha, kis institution ke paas real power hai, aur kaunsa document us power ko prove karta hai. Agar election story hai to past margin, candidate affidavit, turnout aur local issue niklega. Agar protest hai to demand list, permission, police order, detention/injury count aur government response niklega. Agar court ya bill hai to exact order, clause, precedent, committee record aur implementation power niklega.
+
+Evidence line: abhi isse final proof mat maaniye. Pehle primary document, official statement, agency copy, regional reporting, aur named people ka background compare karna hoga. Agar police order, ECI notice, court record, ministry reply, bill clause, budget data, candidate affidavit, ya department order missing hai, to script me clearly bolna hoga ki evidence thin hai.
 
 Power question: ${topic.powerAnalysis}
 

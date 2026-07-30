@@ -9,7 +9,7 @@ Politily is a zero-budget-first political monitoring desk for one creator.
 - Cloudflare D1 for source registry, seen stories, scores, briefs, and scan runs.
 - Gemini Interactions API for context briefs and creator scripts.
 - Resend for email alerts.
-- Optional Netlify scheduled function as a fallback cron pinger.
+- Cloudflare Worker scheduled handlers for 5-minute scanning and two daily table digest emails.
 
 ## Pipeline
 
@@ -32,6 +32,8 @@ Politily is a zero-budget-first political monitoring desk for one creator.
 4. Alerting
    - Email alerts are sent only when `RESEND_API_KEY`, `ALERT_EMAIL`, and `ALERT_FROM_EMAIL` are configured.
    - `POLITILY_MAX_DEEP_BRIEFS_PER_RUN` keeps Gemini usage controlled.
+   - Routine updates are grouped into midday and end-of-day topic tables.
+   - Instant emails are reserved for new or strengthened issues scoring 85/100 or higher.
 
 ## Data Model
 

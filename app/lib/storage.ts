@@ -4,6 +4,7 @@ import type {
   PolitilyBrief,
   ScanRun,
   SignalSource,
+  StoryScores,
   StorySourceLink,
   StoredStory,
   StoryStatus,
@@ -324,6 +325,46 @@ export async function addStorySource(
       VALUES (?, ?, ?, ?, ?, ?)`
     )
     .bind(newId("src"), link.storyId, link.title, link.url, link.sourceName, link.publishedAt)
+    .run();
+}
+
+export async function strengthenStoryFromSignal(
+  db: D1Database,
+  storyId: string,
+  signal: Pick<StoredStory, "summary" | "imageUrl" | "articleExcerpt" | "status"> & StoryScores
+) {
+  await db
+    .prepare(
+      `UPDATE stories
+      SET
+        summary = CASE WHEN length(COALESCE(summary, '')) < length(?) THEN ? ELSE summary END,
+        image_url = COALESCE(image_url, ?),
+        article_excerpt = CASE WHEN length(COALESCE(article_excerpt, '')) < length(?) THEN ? ELSE article_excerpt END,
+        novelty_score = MAX(novelty_score, ?),
+        political_weight = MAX(political_weight, ?),
+        geopolitical_relevance = MAX(geopolitical_relevance, ?),
+        viral_potential = MAX(viral_potential, ?),
+        total_score = MAX(total_score, ?),
+        status = CASE
+          WHEN status = 'watching' AND ? = 'triggered' THEN 'triggered'
+          ELSE status
+        END
+      WHERE id = ?`
+    )
+    .bind(
+      signal.summary,
+      signal.summary,
+      signal.imageUrl ?? null,
+      signal.articleExcerpt ?? "",
+      signal.articleExcerpt ?? "",
+      signal.noveltyScore,
+      signal.politicalWeight,
+      signal.geopoliticalRelevance,
+      signal.viralPotential,
+      signal.totalScore,
+      signal.status,
+      storyId
+    )
     .run();
 }
 
