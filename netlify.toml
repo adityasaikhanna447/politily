@@ -1,5 +1,0 @@
-[functions]
-  directory = "netlify/functions"
-
-[functions."politily-monitor"]
-  schedule = "*/15 * * * *"
