@@ -11,7 +11,7 @@ It watches open political sources, scores new stories, generates context-rich br
 - Stores seen stories and scan history in Cloudflare D1.
 - Uses Gemini to generate historical context, geographical context, facts, narratives, source confidence, and a video script.
 - Sends alert emails through Resend.
-- Runs as a Cloudflare-compatible app with an optional Netlify scheduled pinger.
+- Runs as a Cloudflare Workers app with D1 and scheduled cron.
 
 ## Quick Start
 
@@ -35,11 +35,13 @@ ALERT_EMAIL=
 ALERT_FROM_EMAIL=
 APP_BASE_URL=
 POLITILY_SCORE_THRESHOLD=72
-POLITILY_MAX_DEEP_BRIEFS_PER_RUN=1
-POLITILY_ALERT_MIN_SCORE=60
-POLITILY_MAX_EMAIL_ALERTS_PER_RUN=5
+POLITILY_MAX_DEEP_BRIEFS_PER_RUN=0
+POLITILY_ALERT_MIN_SCORE=85
+POLITILY_MAX_EMAIL_ALERTS_PER_RUN=3
 POLITILY_MAX_SOURCES_PER_RUN=18
 POLITILY_FETCH_TIMEOUT_MS=6500
+POLITILY_MIN_STORY_DATE=2026-07-20T00:00:00+05:30
+POLITILY_MAX_MEDIA_FETCHES_PER_RUN=6
 ```
 
 Never commit `.env` files.
@@ -56,6 +58,13 @@ Never commit `.env` files.
 - `docs/ARCHITECTURE.md`: system design
 - `docs/SOURCE_LIBRARY.md`: source expansion guide
 - `docs/DEPLOYMENT.md`: deployment path
+
+## Email Rhythm
+
+- Source scan: every 5 minutes.
+- Scheduled digest: two table reports per day, 12:00 PM IST and 9:00 PM IST.
+- Instant alerts: only new or strengthened issues scoring `85/100` or higher.
+- Gemini tokens are not used for scanning or scheduled digests; they are used only when a deep brief/script is generated.
 
 ## License
 
