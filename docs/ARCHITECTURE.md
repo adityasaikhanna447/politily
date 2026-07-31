@@ -15,14 +15,16 @@ Politily is a zero-budget-first political monitoring desk for one creator.
 
 1. Signal detection
    - Active sources are stored in D1.
-   - Default live sources include GDELT global politics, GDELT India politics, GDELT geopolitics, and PM India RSS.
-   - PIB and party press-release slots are seeded as paused examples until their final feed URLs are confirmed.
+  - Default live sources include GDELT India politics, freshness sweeps, national media RSS, regional-language search lanes, social/viral search lanes, and PM India RSS.
+  - PIB and party press-release slots are seeded as paused examples until their final feed URLs are confirmed.
 
 2. Story scoring
-   - Novelty checks recent stored stories for title overlap.
-   - Political weight checks institution, party, election, policy, court, and administration terms.
-   - Geopolitical relevance checks diplomacy, border, conflict, treaty, sanction, and country terms.
-   - Viral potential checks urgency, controversy, protest, court, corruption, and alliance terms.
+  - Novelty checks recent stored stories for title overlap.
+  - Political weight checks institution, party, election, policy, court, and administration terms.
+   - Geopolitical relevance separates India foreign-policy signals from wider global-politics signals.
+  - Viral potential checks urgency, controversy, protest, court, corruption, and alliance terms.
+   - Sentiment score estimates public mood and backlash risk.
+   - Score breakdowns are stored so the dashboard can show why a story ranked.
 
 3. Deep research
    - Stories above `POLITILY_SCORE_THRESHOLD` are eligible for Gemini.
@@ -37,9 +39,9 @@ Politily is a zero-budget-first political monitoring desk for one creator.
 
 ## Data Model
 
-- `sources`: source registry and active/paused status.
-- `stories`: one row per detected story with scores and brief output.
-- `story_sources`: supporting links for each story.
+- `sources`: source registry with active/paused status, `bias_lean`, `verification_method`, `language`, and `source_lane`.
+- `stories`: one row per detected story with scores, sentiment, score breakdown, verification method, and brief output.
+- `story_sources`: supporting links for each story, including source lane, bias lean, and verification method.
 - `scan_runs`: run history and error messages.
 
 ## 0 Budget Notes

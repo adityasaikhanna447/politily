@@ -18,6 +18,10 @@ const schemaStatements = [
     url TEXT NOT NULL,
     region TEXT NOT NULL DEFAULT 'global',
     category TEXT NOT NULL DEFAULT 'politics',
+    bias_lean TEXT NOT NULL DEFAULT 'unknown',
+    verification_method TEXT NOT NULL DEFAULT '',
+    language TEXT NOT NULL DEFAULT 'English',
+    source_lane TEXT NOT NULL DEFAULT 'portal',
     priority INTEGER NOT NULL DEFAULT 50,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -42,7 +46,10 @@ const schemaStatements = [
     political_weight INTEGER NOT NULL DEFAULT 0,
     geopolitical_relevance INTEGER NOT NULL DEFAULT 0,
     viral_potential INTEGER NOT NULL DEFAULT 0,
+    sentiment_score INTEGER NOT NULL DEFAULT 50,
     total_score INTEGER NOT NULL DEFAULT 0,
+    scoring_breakdown_json TEXT NOT NULL DEFAULT '{}',
+    verification_method TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'watching',
     brief_json TEXT,
     script_text TEXT,
@@ -54,6 +61,9 @@ const schemaStatements = [
     title TEXT NOT NULL,
     url TEXT NOT NULL,
     source_name TEXT NOT NULL,
+    bias_lean TEXT NOT NULL DEFAULT 'unknown',
+    verification_method TEXT NOT NULL DEFAULT '',
+    source_lane TEXT NOT NULL DEFAULT 'portal',
     published_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
@@ -82,6 +92,22 @@ const legacySourceIdsToPause = [
 const storyColumnMigrations = [
   { name: "image_url", sql: "ALTER TABLE stories ADD COLUMN image_url TEXT" },
   { name: "article_excerpt", sql: "ALTER TABLE stories ADD COLUMN article_excerpt TEXT" },
+  { name: "sentiment_score", sql: "ALTER TABLE stories ADD COLUMN sentiment_score INTEGER NOT NULL DEFAULT 50" },
+  { name: "scoring_breakdown_json", sql: "ALTER TABLE stories ADD COLUMN scoring_breakdown_json TEXT NOT NULL DEFAULT '{}'" },
+  { name: "verification_method", sql: "ALTER TABLE stories ADD COLUMN verification_method TEXT NOT NULL DEFAULT ''" },
+];
+
+const sourceColumnMigrations = [
+  { name: "bias_lean", sql: "ALTER TABLE sources ADD COLUMN bias_lean TEXT NOT NULL DEFAULT 'unknown'" },
+  { name: "verification_method", sql: "ALTER TABLE sources ADD COLUMN verification_method TEXT NOT NULL DEFAULT ''" },
+  { name: "language", sql: "ALTER TABLE sources ADD COLUMN language TEXT NOT NULL DEFAULT 'English'" },
+  { name: "source_lane", sql: "ALTER TABLE sources ADD COLUMN source_lane TEXT NOT NULL DEFAULT 'portal'" },
+];
+
+const storySourceColumnMigrations = [
+  { name: "bias_lean", sql: "ALTER TABLE story_sources ADD COLUMN bias_lean TEXT NOT NULL DEFAULT 'unknown'" },
+  { name: "verification_method", sql: "ALTER TABLE story_sources ADD COLUMN verification_method TEXT NOT NULL DEFAULT ''" },
+  { name: "source_lane", sql: "ALTER TABLE story_sources ADD COLUMN source_lane TEXT NOT NULL DEFAULT 'portal'" },
 ];
 
 type Row = Record<string, unknown>;
@@ -93,14 +119,20 @@ export function newId(prefix: string) {
 
 export async function ensureDatabase(db: D1Database) {
   await db.batch(schemaStatements.map((statement) => db.prepare(statement)));
-  await migrateStoryColumns(db);
+  await migrateTableColumns(db, "stories", storyColumnMigrations);
+  await migrateTableColumns(db, "sources", sourceColumnMigrations);
+  await migrateTableColumns(db, "story_sources", storySourceColumnMigrations);
   await seedSources(db);
 }
 
-async function migrateStoryColumns(db: D1Database) {
-  const result = await db.prepare("PRAGMA table_info(stories)").all<Row>();
+async function migrateTableColumns(
+  db: D1Database,
+  tableName: string,
+  migrations: Array<{ name: string; sql: string }>
+) {
+  const result = await db.prepare(`PRAGMA table_info(${tableName})`).all<Row>();
   const columns = new Set(result.results.map((row) => String(row.name)));
-  const missing = storyColumnMigrations.filter((migration) => !columns.has(migration.name));
+  const missing = migrations.filter((migration) => !columns.has(migration.name));
 
   if (missing.length) {
     await db.batch(missing.map((migration) => db.prepare(migration.sql)));
@@ -131,14 +163,18 @@ async function seedSources(db: D1Database) {
       db
         .prepare(
           `INSERT INTO sources
-          (id, name, type, url, region, category, priority, active)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          (id, name, type, url, region, category, bias_lean, verification_method, language, source_lane, priority, active)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             type = excluded.type,
             url = excluded.url,
             region = excluded.region,
             category = excluded.category,
+            bias_lean = excluded.bias_lean,
+            verification_method = excluded.verification_method,
+            language = excluded.language,
+            source_lane = excluded.source_lane,
             priority = excluded.priority,
             active = excluded.active`
         )
@@ -149,6 +185,10 @@ async function seedSources(db: D1Database) {
           source.url,
           source.region,
           source.category,
+          source.biasLean ?? inferBiasLean(source.name, source.category, source.url),
+          source.verificationMethod ?? inferSourceVerificationMethod(source.name, source.category, source.type),
+          source.language ?? inferSourceLanguage(source.name, source.category, source.url),
+          source.sourceLane ?? inferSourceLane(source.name, source.category, source.type, source.url),
           source.priority,
           source.active ? 1 : 0
         )
@@ -277,8 +317,8 @@ export async function insertStory(db: D1Database, story: StoredStory) {
       (id, fingerprint, title, summary, url, image_url, article_excerpt, source_name, source_type,
        source_country, language, published_at, detected_at, tags_json,
        novelty_score, political_weight, geopolitical_relevance, viral_potential,
-       total_score, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       sentiment_score, total_score, scoring_breakdown_json, verification_method, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       story.id,
@@ -299,7 +339,10 @@ export async function insertStory(db: D1Database, story: StoredStory) {
       story.politicalWeight,
       story.geopoliticalRelevance,
       story.viralPotential,
+      story.sentimentScore,
       story.totalScore,
+      JSON.stringify(story.scoringBreakdown),
+      story.verificationMethod ?? verificationMethodForStory(story, 1),
       story.status
     )
     .run();
@@ -321,10 +364,20 @@ export async function addStorySource(
   await db
     .prepare(
       `INSERT OR IGNORE INTO story_sources
-      (id, story_id, title, url, source_name, published_at)
-      VALUES (?, ?, ?, ?, ?, ?)`
+      (id, story_id, title, url, source_name, bias_lean, verification_method, source_lane, published_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(newId("src"), link.storyId, link.title, link.url, link.sourceName, link.publishedAt)
+    .bind(
+      newId("src"),
+      link.storyId,
+      link.title,
+      link.url,
+      link.sourceName,
+      link.biasLean ?? inferBiasLean(link.sourceName, "", link.url),
+      link.verificationMethod ?? inferSourceVerificationMethod(link.sourceName, "", "rss"),
+      link.sourceLane ?? inferSourceLane(link.sourceName, "", "rss", link.url),
+      link.publishedAt
+    )
     .run();
 }
 
@@ -344,7 +397,10 @@ export async function strengthenStoryFromSignal(
         political_weight = MAX(political_weight, ?),
         geopolitical_relevance = MAX(geopolitical_relevance, ?),
         viral_potential = MAX(viral_potential, ?),
+        sentiment_score = MAX(sentiment_score, ?),
+        scoring_breakdown_json = CASE WHEN ? >= total_score THEN ? ELSE scoring_breakdown_json END,
         total_score = MAX(total_score, ?),
+        verification_method = CASE WHEN length(COALESCE(verification_method, '')) < length(?) THEN ? ELSE verification_method END,
         status = CASE
           WHEN status = 'watching' AND ? = 'triggered' THEN 'triggered'
           ELSE status
@@ -361,7 +417,12 @@ export async function strengthenStoryFromSignal(
       signal.politicalWeight,
       signal.geopoliticalRelevance,
       signal.viralPotential,
+      signal.sentimentScore,
       signal.totalScore,
+      JSON.stringify(signal.scoringBreakdown),
+      signal.totalScore,
+      verificationMethodForScores(signal),
+      verificationMethodForScores(signal),
       signal.status,
       storyId
     )
@@ -380,11 +441,14 @@ export async function listStorySources(
         title,
         url,
         source_name,
+        bias_lean,
+        verification_method,
+        source_lane,
         published_at,
         MIN(created_at) AS created_at
       FROM story_sources
       WHERE story_id = ?
-      GROUP BY story_id, url, source_name, title, published_at
+      GROUP BY story_id, url, source_name, title, bias_lean, verification_method, source_lane, published_at
       ORDER BY created_at DESC`
     )
     .bind(storyId)
@@ -499,6 +563,10 @@ function toSource(row: Row): SignalSource {
     category: String(row.category ?? "politics"),
     priority: Number(row.priority ?? 50),
     active: Number(row.active ?? 1) === 1,
+    biasLean: String(row.bias_lean ?? "unknown") as SignalSource["biasLean"],
+    verificationMethod: String(row.verification_method ?? ""),
+    language: String(row.language ?? "English"),
+    sourceLane: String(row.source_lane ?? "portal") as SignalSource["sourceLane"],
     createdAt: String(row.created_at ?? ""),
     lastCheckedAt: row.last_checked_at ? String(row.last_checked_at) : null,
   };
@@ -526,8 +594,13 @@ function toStory(row: Row): StoredStory {
     politicalWeight: Number(row.political_weight ?? 0),
     geopoliticalRelevance: Number(row.geopolitical_relevance ?? 0),
     viralPotential: Number(row.viral_potential ?? 0),
+    sentimentScore: Number(row.sentiment_score ?? 50),
     totalScore: Number(row.total_score ?? 0),
+    scoringBreakdown:
+      safeJson<StoredStory["scoringBreakdown"]>(String(row.scoring_breakdown_json ?? "{}")) ??
+      fallbackScoringBreakdown(),
     status: String(row.status ?? "watching") as StoredStory["status"],
+    verificationMethod: String(row.verification_method ?? ""),
     brief,
     scriptText: row.script_text ? String(row.script_text) : null,
     emailSentAt: row.email_sent_at ? String(row.email_sent_at) : null,
@@ -541,6 +614,9 @@ function toStorySource(row: Row): StorySourceLink {
     title: String(row.title),
     url: String(row.url),
     sourceName: String(row.source_name),
+    biasLean: String(row.bias_lean ?? "unknown") as StorySourceLink["biasLean"],
+    verificationMethod: String(row.verification_method ?? ""),
+    sourceLane: String(row.source_lane ?? "portal") as StorySourceLink["sourceLane"],
     publishedAt: row.published_at ? String(row.published_at) : null,
     createdAt: String(row.created_at ?? ""),
   };
@@ -566,4 +642,98 @@ function safeJson<T>(value: string): T | null {
   } catch {
     return null;
   }
+}
+
+function fallbackScoringBreakdown(): StoredStory["scoringBreakdown"] {
+  return {
+    noveltySignals: ["Legacy story: scoring breakdown was not stored when this row was created."],
+    politicalSignals: [],
+    geopoliticalSignals: [],
+    viralSignals: [],
+    sentimentSignals: [],
+    velocitySignal: "Legacy row",
+    sourceSignal: "Legacy row",
+    formula: "total = novelty 24% + political 31% + geo 20% + viral 25% + hot-topic boost",
+  };
+}
+
+function inferSourceLane(
+  name: string,
+  category: string,
+  type: SignalSource["type"] | string,
+  url: string
+): SignalSource["sourceLane"] {
+  const text = `${name} ${category} ${type} ${url}`.toLowerCase();
+  if (/fact.?check|alt news|boom|factly|pib fact check/.test(text)) return "factcheck";
+  if (/x\.com|twitter|reddit|youtube|social|viral/.test(text)) return "social";
+  if (/regional|hindi|amar ujala|bhaskar|jagran|aaj tak|abp|lokmat|eenadu|dinamalar|anandabazar|mathrubhumi/.test(text)) return "regional";
+  if (/pti|uni|ani|reuters|associated press|agency|wire/.test(text)) return "agency";
+  if (/official|primary|pib|pmindia|mea|supreme court|prs|parliament|election commission|court|gov\.in/.test(text)) return "official";
+  if (/research/.test(text)) return "research";
+  return "portal";
+}
+
+function inferSourceLanguage(name: string, category: string, url: string) {
+  const text = `${name} ${category} ${url}`.toLowerCase();
+  if (/hindi|aajtak|aaj tak|amarujala|amar ujala|bhaskar|jagran|livehindustan|abplive/.test(text)) return "Hindi";
+  if (/tamil|dinamalar|vikatan/.test(text)) return "Tamil";
+  if (/bengali|anandabazar|bangla/.test(text)) return "Bengali";
+  if (/marathi|lokmat|maharashtra/.test(text)) return "Marathi";
+  if (/telugu|eenadu|sakshi/.test(text)) return "Telugu";
+  if (/malayalam|mathrubhumi|manorama/.test(text)) return "Malayalam";
+  if (/regional/.test(text)) return "Regional";
+  if (/social|reddit|youtube|x\.com|twitter/.test(text)) return "Mixed";
+  return "English";
+}
+
+function inferBiasLean(name: string, category: string, url: string): SignalSource["biasLean"] {
+  const text = `${name} ${category} ${url}`.toLowerCase();
+  if (/official|primary|pib|pmindia|mea|gov\.in|state-owned/.test(text)) return "state-owned";
+  if (/agency|pti|uni|ani|reuters|associated press/.test(text)) return "center";
+  if (/fact.?check|alt news|boom|factly/.test(text)) return "center";
+  if (/social|reddit|youtube|x\.com|twitter/.test(text)) return "unknown";
+  if (/international|bbc|al jazeera|guardian|new york times|washington post/.test(text)) return "center";
+  return "unknown";
+}
+
+function inferSourceVerificationMethod(
+  name: string,
+  category: string,
+  type: SignalSource["type"] | string
+) {
+  const text = `${name} ${category} ${type}`.toLowerCase();
+  if (/fact.?check|alt news|boom|factly|pib fact check/.test(text)) {
+    return "Fact-check lane: verify claim, claimant, evidence cited, and whether independent sources corroborate it.";
+  }
+  if (/official|primary|pib|pmindia|mea|court|prs|parliament|election commission/.test(text)) {
+    return "Primary-source lane: verify directly against official order, release, court record, bill text, or notification.";
+  }
+  if (/agency|pti|uni|ani|reuters|associated press/.test(text)) {
+    return "Agency lane: useful for speed; corroborate with at least one primary record or independent portal before scripting.";
+  }
+  if (/social|viral|x|reddit|youtube/.test(text)) {
+    return "Social/viral lane: treat as early signal only; verify with source URL, original post, timestamp, and independent reporting.";
+  }
+  if (/regional|hindi/.test(text)) {
+    return "Regional-language lane: useful for early/local signal; corroborate translation, local context, and one national/official source.";
+  }
+  return "Portal lane: verify by cross-source corroboration, primary documents, and source-position comparison.";
+}
+
+function verificationMethodForStory(story: StoredStory, sourceCount: number) {
+  if (story.verificationMethod) return story.verificationMethod;
+  const tags = story.tags.join(" ").toLowerCase();
+  if (tags.includes("fact-check")) {
+    return `Fact-check method: ${sourceCount} source(s), flagged claim terms, source trail comparison, and primary-record requirement.`;
+  }
+  return verificationMethodForScores(story);
+}
+
+function verificationMethodForScores(scores: Pick<StoryScores, "tags" | "scoringBreakdown" | "sentimentScore">) {
+  if (scores.tags.includes("fact-check")) {
+    const claims = scores.scoringBreakdown.sentimentSignals.concat(scores.scoringBreakdown.viralSignals).slice(0, 5);
+    return `Fact-check method: flagged terms ${claims.join(", ") || "none stored"}; verify by cross-source corroboration and primary records.`;
+  }
+
+  return "Verification method: source trail count, source lane, bias label, score breakdown, and primary-document checklist.";
 }

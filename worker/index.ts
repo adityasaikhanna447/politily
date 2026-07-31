@@ -69,7 +69,7 @@ const worker = {
     env: Env,
     ctx: ExecutionContext
   ): Promise<void> {
-    if (controller.cron === "30 6,15 * * *") {
+    if (controller.cron === "30 8,15 * * *") {
       ctx.waitUntil(sendScheduledDigest(env as RuntimeEnv));
       return;
     }

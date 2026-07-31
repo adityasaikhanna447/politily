@@ -20,7 +20,7 @@ const localBindingConfig = {
     POLITILY_MAX_MEDIA_FETCHES_PER_RUN: "6",
   },
   triggers: {
-    crons: ["*/5 * * * *", "30 6,15 * * *"],
+    crons: ["*/5 * * * *", "30 8,15 * * *"],
   },
   d1_databases: [
     {

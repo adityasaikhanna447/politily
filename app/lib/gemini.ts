@@ -199,10 +199,13 @@ Deep research chain to apply to every issue type:
 - Protest/public order: organisers, demands, route/permission, police order, legal section, arrests/detentions/injuries, official response, prior grievance timeline, and whether party amplification changes the story.
 - Court/legal rights: petitioners, respondents, bench/court, order text, legal sections, precedent, next hearing, enforcement impact, and what both sides legally claim.
 - Parliament/bill/policy: exact clause/change, sponsoring ministry, older law/status quo, committee history, delegated power, winners/losers, federal/rights/industry impact, and amendment/watch items.
-- Party politics: faction, leader incentives, alliance math, organisational history, election calendar, public messaging, who gains narrative power, and what local reporting proves.
+- Party politics: separate BJP/NDA, Congress, regional parties, and INDIA bloc incentives; explain faction, leader incentives, alliance math, organisational history, election calendar, public messaging, who gains narrative power, and what local reporting proves.
+- Economy/policy: budget line, inflation/jobs/welfare data, scheme design, ministry responsibility, beneficiary impact, opposition criticism, and what official dataset proves scale.
 - Governance/administration: department mandate, budget/data, official order, officer/ministry chain, delivery failure/success metric, affected citizen group, and remedy pathway.
 - Censorship/culture/public order: content at issue, legal basis, complainants, state response, free speech/public order claim, affected community, previous bans, and what proves propaganda versus verified harm.
-- Geopolitics/security: official statements, timeline, treaty/border/trade/security stakes, domestic political incentive, international reaction, and what primary diplomatic record exists.
+- Foreign policy - India: official statements, timeline, treaty/border/trade/security stakes, domestic political incentive, international reaction, and what primary diplomatic record exists.
+- Global politics: identify whether it directly affects India, diaspora, energy/trade/security, or narrative climate; otherwise keep it as a low-priority global context note.
+- Social/viral: original post, timestamp, platform spread, manipulation risk, first credible reporter, official denial/confirmation, and what independent source converts it from buzz to usable fact.
 
 Before writing, ask yourself and answer inside the JSON:
 - What exactly happened, where, when, who triggered it, and who responded?

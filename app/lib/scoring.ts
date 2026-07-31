@@ -47,6 +47,12 @@ const politicalTerms = [
   "sp",
   "rjd",
   "jdu",
+  "india bloc",
+  "unemployment",
+  "inflation",
+  "budget",
+  "welfare",
+  "scheme",
 ];
 
 const geopoliticalTerms = [
@@ -70,6 +76,24 @@ const geopoliticalTerms = [
   "g7",
   "brics",
   "global south",
+];
+
+const indiaForeignPolicyTerms = [
+  "china",
+  "pakistan",
+  "united states",
+  "us",
+  "border",
+  "lac",
+  "loc",
+  "mea",
+  "jaishankar",
+  "foreign minister",
+  "diplomacy",
+  "treaty",
+  "bilateral",
+  "strategic",
+  "defence",
 ];
 
 const viralTerms = [
@@ -123,6 +147,38 @@ const viralTerms = [
   "takedown",
   "misinformation",
   "disinformation",
+  "backlash",
+  "boycott",
+  "trend",
+  "viral",
+  "x post",
+  "reddit",
+  "youtube",
+];
+
+const sentimentRiskTerms = [
+  "anger",
+  "angry",
+  "outrage",
+  "backlash",
+  "protest",
+  "clash",
+  "violence",
+  "arrest",
+  "detained",
+  "lathi charge",
+  "tear gas",
+  "ban",
+  "censorship",
+  "corruption",
+  "scandal",
+  "paper leak",
+  "unemployment",
+  "inflation",
+  "communal",
+  "caste",
+  "rights",
+  "boycott",
 ];
 
 export function fingerprintFor(signal: Pick<RawSignal, "title" | "url" | "sourceName">) {
@@ -139,9 +195,16 @@ export function scoreSignal(signal: RawSignal, recentStories: StoredStory[]): St
     0
   );
   const noveltyScore = clamp(Math.round(100 - maxSimilarity * 92));
-  const politicalWeight = clamp(scoreKeywordSet(text, politicalTerms, signal.sourcePriority));
-  const geopoliticalRelevance = clamp(scoreKeywordSet(text, geopoliticalTerms, 28));
-  const viralPotential = clamp(scoreKeywordSet(text, viralTerms, 24) + headlineTension(signal.title));
+  const politicalHits = matchedTerms(text, politicalTerms);
+  const geopoliticalHits = matchedTerms(text, geopoliticalTerms);
+  const indiaForeignHits = matchedTerms(text, indiaForeignPolicyTerms);
+  const viralHits = matchedTerms(text, viralTerms);
+  const sentimentHits = matchedTerms(text, sentimentRiskTerms);
+  const velocity = velocityBoost(signal.publishedAt);
+  const politicalWeight = clamp(scoreKeywordSetFromHits(politicalHits.length, signal.sourcePriority));
+  const geopoliticalRelevance = clamp(scoreKeywordSetFromHits(geopoliticalHits.length + indiaForeignHits.length, 28));
+  const viralPotential = clamp(scoreKeywordSetFromHits(viralHits.length, 24) + headlineTension(signal.title) + velocity);
+  const sentimentScore = clamp(36 + sentimentHits.length * 10 + Math.round(viralPotential * 0.18) + velocity);
   const hotTopicBoost = hotTopicSignalBoost(text);
   const tags = inferTags(text);
 
@@ -154,14 +217,34 @@ export function scoreSignal(signal: RawSignal, recentStories: StoredStory[]): St
         hotTopicBoost
     )
   );
+  const scoringBreakdown = {
+    noveltySignals: [
+      maxSimilarity > 0.7
+        ? "Similar issue already seen recently"
+        : maxSimilarity > 0.35
+          ? "Partial overlap with a recent issue"
+          : "Fresh headline against recent stored issues",
+    ],
+    politicalSignals: politicalHits.slice(0, 10),
+    geopoliticalSignals: uniqueStrings([...indiaForeignHits, ...geopoliticalHits]).slice(0, 10),
+    viralSignals: viralHits.slice(0, 10),
+    sentimentSignals: sentimentHits.slice(0, 10),
+    velocitySignal: velocity
+      ? `Freshness boost ${velocity}: source timestamp is recent or breaking`
+      : "No freshness boost from timestamp",
+    sourceSignal: `Source priority ${signal.sourcePriority}; lane ${signal.sourceLane ?? "portal"}; bias ${signal.biasLean ?? "unknown"}`,
+    formula: "total = novelty 24% + political 31% + geo 20% + viral 25% + hot-topic boost",
+  };
 
   return {
     noveltyScore,
     politicalWeight,
     geopoliticalRelevance,
     viralPotential,
+    sentimentScore,
     totalScore,
     tags,
+    scoringBreakdown,
   };
 }
 
@@ -182,9 +265,29 @@ export function titleSimilarity(a: string, b: string) {
   return shared / Math.max(left.size, right.size);
 }
 
-function scoreKeywordSet(text: string, terms: string[], base: number) {
-  const hits = terms.filter((term) => text.includes(term)).length;
+function matchedTerms(text: string, terms: string[]) {
+  return terms.filter((term) => text.includes(term));
+}
+
+function scoreKeywordSetFromHits(hits: number, base: number) {
   return Math.min(100, base + hits * 12);
+}
+
+function velocityBoost(publishedAt?: string | null) {
+  if (!publishedAt) {
+    return 0;
+  }
+
+  const ageMs = Date.now() - Date.parse(publishedAt);
+  if (!Number.isFinite(ageMs) || ageMs < 0) {
+    return 0;
+  }
+
+  const hours = ageMs / (1000 * 60 * 60);
+  if (hours <= 2) return 12;
+  if (hours <= 6) return 8;
+  if (hours <= 24) return 4;
+  return 0;
 }
 
 function headlineTension(title: string) {
@@ -208,7 +311,15 @@ function inferTags(text: string) {
     ["youth-protest", ["cjp", "cockroach janta party", "sansad chalo", "chalo sansad", "student protest", "neet", "paper leak", "jantar mantar"]],
     ["states", ["punjab", "kashmir", "manipur", "assam", "bengal", "tamil nadu", "kerala", "maharashtra", "bihar", "uttar pradesh"]],
     ["geopolitics", geopoliticalTerms],
+    ["foreign-policy-india", indiaForeignPolicyTerms],
+    ["global-politics", ["united nations", "brics", "g7", "global south", "russia", "ukraine", "war", "conflict"]],
+    ["party-bjp", ["bjp", "bharatiya janata party"]],
+    ["party-congress", ["congress", "indian national congress"]],
+    ["party-regional", ["aap", "dmk", "tmc", "sp", "rjd", "jdu", "shiv sena", "ncp", "aiadmk", "bsp", "cpi"]],
+    ["opposition-india-bloc", ["india bloc", "opposition bloc", "opposition alliance", "india alliance"]],
+    ["economy-policy", ["budget", "inflation", "unemployment", "welfare", "scheme", "subsidy", "tax", "gst", "jobs"]],
     ["party-politics", ["party", "coalition", "opposition", "defection", "alliance"]],
+    ["social-viral", ["viral", "trend", "x post", "reddit", "youtube", "social media"]],
     ["public-order", ["protest", "violence", "clash", "security"]],
     ["fact-check", ["misinformation", "disinformation", "fake", "hoax", "fact check"]],
   ];
@@ -244,6 +355,10 @@ function hotTopicSignalBoost(text: string) {
   }
 
   return 0;
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
 function tokenise(value: string) {

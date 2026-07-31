@@ -4,9 +4,11 @@ Politily starts with a small source set and is designed to grow.
 
 ## Included Active Sources
 
-- GDELT Global Politics
-- GDELT India Politics
-- GDELT Geopolitics
+- Fresh 24h India politics, protest/courts, party/election, and economy/policy sweeps
+- Direct newsroom RSS feeds from national portals
+- Regional-language Hindi/regional search lanes
+- Social/Viral early-chatter search lane
+- Foreign Policy - India and Global Politics GDELT lanes
 - Prime Minister of India RSS
 
 ## Included Paused Source Slots
@@ -28,6 +30,8 @@ The paused slots are intentional. Confirm the exact RSS or press-release URL bef
 - AAP press releases
 - Major state government press rooms
 - YouTube RSS feeds for official party channels
+- Hindi and regional-language portals such as Bhaskar, Amar Ujala, Jagran, Live Hindustan, Lokmat, Eenadu, Anandabazar, and Mathrubhumi
+- Social/Viral leads from X, Reddit, and YouTube search/RSS-style lanes, treated only as early-warning signals
 
 ## Recommended Global Sources To Add
 
@@ -44,6 +48,15 @@ The paused slots are intentional. Confirm the exact RSS or press-release URL bef
 3. Give high-trust official sources a priority from `80` to `100`.
 4. Keep partisan or commentary-heavy sources lower unless you only want narrative monitoring.
 5. Run a manual scan from the dashboard.
+
+## Metadata Fields
+
+Add these fields when you add a new source:
+
+- `sourceLane`: `official`, `agency`, `portal`, `regional`, `social`, `factcheck`, or `research`
+- `biasLean`: `left`, `center`, `right`, `state-owned`, `mixed`, or `unknown`
+- `language`: English, Hindi, Regional, or the specific language
+- `verificationMethod`: one sentence explaining how to verify this lane before scripting
 
 ## Verification Rule
 

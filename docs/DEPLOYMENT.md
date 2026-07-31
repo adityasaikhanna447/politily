@@ -50,6 +50,6 @@ POLITILY_MAX_DEEP_BRIEFS_PER_RUN=0
 ## Email Rhythm
 
 - Scanner cron: `*/5 * * * *`
-- Scheduled digest cron: `30 6,15 * * *`
-- Digest timing in India: 12 PM and 9 PM IST
+- Scheduled digest cron: `30 8,15 * * *`
+- Digest timing in India: 2 PM and 9 PM IST
 - Instant alerts: only issues at `POLITILY_ALERT_MIN_SCORE=85` or above

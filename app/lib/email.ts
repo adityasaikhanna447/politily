@@ -364,7 +364,7 @@ function buildDigestIssueRowHtml(issue: DigestIssue, rank: number, appLink: stri
     ? sourceLinks
         .map(
           (link) =>
-            `<a href="${escapeHtml(link.url)}" style="display:block;color:#8dbdff;text-decoration:none;margin:0 0 6px;">${escapeHtml(cleanEmailText(link.sourceName))}: ${escapeHtml(truncateEmail(link.title, 76))}</a>`
+            `<a href="${escapeHtml(link.url)}" style="display:block;color:#8dbdff;text-decoration:none;margin:0 0 6px;">${escapeHtml(cleanEmailText(link.sourceName))}: ${escapeHtml(truncateEmail(link.title, 76))}<br><span style="color:#8fa0a8;font-size:11px;">${escapeHtml(sourceMetaForEmail(link))}</span></a>`
         )
         .join("")
     : `<span style="color:#b7bdbe;">${escapeHtml(issue.sources.join(", ") || lead.sourceName)}</span>`;
@@ -463,7 +463,7 @@ function buildDigestText(
         `Creator angle: ${videoAngleForEmail(lead)}`,
         `Verification: ${verificationForEmail(issue)}`,
         `Source mix: ${issue.sources.join(", ") || lead.sourceName}`,
-        ...sourceLinksForEmail(issue).slice(0, 5).map((link) => `- ${link.sourceName}: ${link.title} (${link.url})`),
+        ...sourceLinksForEmail(issue).slice(0, 5).map((link) => `- ${link.sourceName}: ${link.title} [${sourceMetaForEmail(link)}] (${link.url})`),
         `Open issue: ${appLink.replace(/\/$/, "")}/?story=${encodeURIComponent(lead.id)}&view=issue`,
         `Generate brief: ${appLink.replace(/\/$/, "")}/?story=${encodeURIComponent(lead.id)}&view=brief`,
         ""
@@ -527,7 +527,7 @@ function buildDigestIssues(stories: StoredStory[]) {
     });
   });
 
-  return issues.sort((left, right) => right.score - left.score || right.sources.length - left.sources.length);
+  return issues.sort((left, right) => issueDateValue(right) - issueDateValue(left) || right.score - left.score || right.sources.length - left.sources.length);
 }
 
 function groupDigestIssuesByTopic(issues: DigestIssue[]) {
@@ -540,12 +540,14 @@ function groupDigestIssuesByTopic(issues: DigestIssue[]) {
   return Array.from(groups.entries())
     .map(([topic, topicIssues]) => ({
       topic,
-      issues: topicIssues.sort((left, right) => right.score - left.score || right.sources.length - left.sources.length),
+      issues: topicIssues.sort(
+        (left, right) => issueDateValue(right) - issueDateValue(left) || right.score - left.score || right.sources.length - left.sources.length
+      ),
     }))
     .sort((left, right) => {
       const weightDiff = topicWeight(left.topic) - topicWeight(right.topic);
       if (weightDiff !== 0) return weightDiff;
-      return (right.issues[0]?.score ?? 0) - (left.issues[0]?.score ?? 0);
+      return issueDateValue(right.issues[0]) - issueDateValue(left.issues[0]);
     });
 }
 
@@ -553,12 +555,18 @@ function topicWeight(topic: string) {
   const weights: Record<string, number> = {
     "Youth protest": 1,
     Election: 2,
-    Parliament: 3,
-    Courts: 4,
-    "Party politics": 5,
-    Censorship: 6,
-    Geopolitics: 7,
-    Politics: 8,
+    "Economy/Policy": 3,
+    Parliament: 4,
+    Courts: 5,
+    "Party/BJP": 6,
+    "Party/Congress": 7,
+    "Party/Regional": 8,
+    "Opposition/INDIA bloc": 9,
+    Censorship: 10,
+    "Foreign Policy - India": 11,
+    "Global Politics": 12,
+    "Social/Viral": 13,
+    Politics: 14,
   };
   return weights[topic] ?? 20;
 }
@@ -578,15 +586,29 @@ function sourceLinksForEmail(issue: DigestIssue) {
       ];
 }
 
+function issueDateValue(issue?: DigestIssue) {
+  if (!issue) return 0;
+  return issue.stories.reduce((max, story) => {
+    const parsed = Date.parse(story.publishedAt || story.detectedAt);
+    return Number.isFinite(parsed) ? Math.max(max, parsed) : max;
+  }, 0);
+}
+
 function topicColor(topic: string) {
   const colors: Record<string, string> = {
     "Youth protest": "#3b9cff",
     Election: "#d6cec2",
+    "Economy/Policy": "#22c55e",
     Parliament: "#a78bfa",
     Courts: "#22c55e",
-    "Party politics": "#ef4444",
+    "Party/BJP": "#ef4444",
+    "Party/Congress": "#60a5fa",
+    "Party/Regional": "#f97316",
+    "Opposition/INDIA bloc": "#facc15",
     Censorship: "#f97316",
-    Geopolitics: "#38bdf8",
+    "Foreign Policy - India": "#38bdf8",
+    "Global Politics": "#8b71e0",
+    "Social/Viral": "#fb7185",
     Politics: "#64748b",
   };
   return colors[topic] ?? "#64748b";
@@ -601,14 +623,22 @@ function issueLabelForEmail(story: StoredStory) {
 }
 
 function topicForStory(story: StoredStory) {
-  const text = `${story.title} ${story.summary} ${story.tags.join(" ")}`.toLowerCase();
+  const text = `${story.title} ${story.summary} ${story.tags.join(" ")} ${(story.sourceLinks ?? [])
+    .map((link) => `${link.sourceName} ${link.sourceLane ?? ""} ${link.verificationMethod ?? ""}`)
+    .join(" ")}`.toLowerCase();
+  if (/x\.com|twitter|reddit|youtube|social|viral|trending/.test(text)) return "Social/Viral";
   if (/cjp|student|protest|sansad/.test(text)) return "Youth protest";
   if (/bypoll|by-election|election|vote|campaign|candidate/.test(text)) return "Election";
+  if (/budget|inflation|unemployment|jobs|welfare|scheme|subsidy|gst|tax|rbi|nso|poverty|ration/.test(text)) return "Economy/Policy";
   if (/parliament|lok sabha|rajya sabha|bill|ordinance/.test(text)) return "Parliament";
   if (/court|judgment|petition|constitution|rights/.test(text)) return "Courts";
   if (/ban|censorship|film|cbfc|takedown/.test(text)) return "Censorship";
-  if (/foreign|border|china|pakistan|summit|brics/.test(text)) return "Geopolitics";
-  if (/bjp|congress|aap|tmc|dmk|rjd|jdu|alliance|opposition/.test(text)) return "Party politics";
+  if (/mea|jaishankar|foreign|border|china|pakistan|summit|brics|quad|diplomacy/.test(text)) return "Foreign Policy - India";
+  if (/united nations|nato|gaza|ukraine|russia|israel|iran|global politics/.test(text)) return "Global Politics";
+  if (/india bloc|i\.n\.d\.i\.a|opposition bloc|mahagathbandhan|seat sharing|opposition unity/.test(text)) return "Opposition/INDIA bloc";
+  if (/bjp|bharatiya janata|nda|rss|modi|shah|nadda/.test(text)) return "Party/BJP";
+  if (/congress|rahul gandhi|kharge|priyanka|inc|nsui/.test(text)) return "Party/Congress";
+  if (/aap|tmc|dmk|rjd|jdu|samajwadi|shiv sena|ncp|tdp|ysrcp|brs|regional party/.test(text)) return "Party/Regional";
   return "Politics";
 }
 
@@ -647,6 +677,13 @@ function verificationForEmail(issue: DigestIssue) {
   if (issue.sources.length >= 4) return "Useful multi-source signal. Still verify primary documents before final script.";
   if (issue.sources.length >= 2) return "Early two-source trail. Generate a deep brief before publishing.";
   return "Thin source trail. Treat this as a lead, not as a confirmed creator script.";
+}
+
+function sourceMetaForEmail(link: StorySourceLink) {
+  const lane = link.sourceLane ? `lane ${link.sourceLane}` : "lane portal";
+  const bias = link.biasLean ? `bias ${link.biasLean}` : "bias unknown";
+  const method = link.verificationMethod ? truncateEmail(link.verificationMethod, 90) : "corroborate before scripting";
+  return `${lane} | ${bias} | ${method}`;
 }
 
 function tokenizeIssue(value: string) {

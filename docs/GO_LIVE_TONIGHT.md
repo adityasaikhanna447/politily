@@ -115,10 +115,10 @@ Use these cron triggers:
 
 ```txt
 */5 * * * *
-30 6,15 * * *
+30 8,15 * * *
 ```
 
-The first cron scans every 5 minutes. The second sends scheduled digest emails at 12:00 PM and 9:00 PM IST.
+The first cron scans every 5 minutes. The second sends scheduled digest emails at 2:00 PM and 9:00 PM IST.
 
 Instant alert rule:
 

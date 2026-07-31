@@ -141,6 +141,9 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
             title: signal.title,
             url: signal.url,
             sourceName: signal.sourceName,
+            biasLean: signal.biasLean,
+            verificationMethod: signal.verificationMethod,
+            sourceLane: signal.sourceLane,
             publishedAt: signal.publishedAt ?? null,
           });
           await strengthenStoryFromSignal(env.DB, related.id, {
@@ -155,6 +158,7 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
             totalScore: Math.max(related.totalScore, scores.totalScore),
             viralPotential: Math.max(related.viralPotential, scores.viralPotential),
             politicalWeight: Math.max(related.politicalWeight, scores.politicalWeight),
+            sentimentScore: Math.max(related.sentimentScore, scores.sentimentScore),
           };
           updateRecentStory(recentStories, updatedRelated);
           if (shouldFastAlertRelatedIssue(updatedRelated, signal, alertThreshold)) {
@@ -187,6 +191,9 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
           title: story.title,
           url: story.url,
           sourceName: story.sourceName,
+          biasLean: signal.biasLean,
+          verificationMethod: signal.verificationMethod,
+          sourceLane: signal.sourceLane,
           publishedAt: story.publishedAt,
         });
         recentStories.unshift(story);
@@ -318,7 +325,7 @@ export async function generateResearchBriefForQuery(env: RuntimeEnv, rawQuery: s
   const searchSignals = await fetchResearchSignals(query);
   const topSignals = uniqueResearchSignals(searchSignals).slice(0, 12);
   const primaryUrl = topSignals[0]?.url || googleNewsSearchUrl(query);
-  const sourceTrail = topSignals.length
+  const sourceTrail: RawSignal[] = topSignals.length
     ? topSignals
     : [
         {
@@ -336,6 +343,10 @@ export async function generateResearchBriefForQuery(env: RuntimeEnv, rawQuery: s
           publishedAt: null,
           sourceId: "politily-research-brain",
           sourcePriority: 98,
+          biasLean: "unknown",
+          verificationMethod:
+            "Research Brain fallback: no indexed source found; verify with primary documents, source trail, and manual search before publishing.",
+          sourceLane: "research",
         },
       ];
   const sourceNames = uniqueStrings(sourceTrail.map((signal) => signal.sourceName));
@@ -357,6 +368,10 @@ export async function generateResearchBriefForQuery(env: RuntimeEnv, rawQuery: s
     publishedAt: topSignals[0]?.publishedAt ?? null,
     sourceId: "politily-research-brain",
     sourcePriority: 98,
+    biasLean: "unknown",
+    verificationMethod:
+      "Research Brain: open-source query trail plus Gemini brief; verify with primary documents before publishing.",
+    sourceLane: "research",
   };
   const scores = scoreSignal(baseSignal, recentStories);
   const fingerprint = fingerprintFor({
@@ -382,11 +397,13 @@ export async function generateResearchBriefForQuery(env: RuntimeEnv, rawQuery: s
       publishedAt: baseSignal.publishedAt ?? null,
       detectedAt: new Date().toISOString(),
       status: "triggered",
-      noveltyScore: scores.noveltyScore,
+      ...scores,
       politicalWeight: Math.max(scores.politicalWeight, 72),
       geopoliticalRelevance: scores.geopoliticalRelevance,
       viralPotential: Math.max(scores.viralPotential, 58),
       totalScore: Math.max(scores.totalScore, 72),
+      verificationMethod:
+        "Research Brain issue: source trail from open search/GDELT plus deep brief; treat as research memo until primary records are checked.",
       tags: uniqueStrings(["research-request", "creator-brain", ...scores.tags]).slice(0, 6),
     };
 
@@ -400,6 +417,9 @@ export async function generateResearchBriefForQuery(env: RuntimeEnv, rawQuery: s
       title: signal.title,
       url: signal.url,
       sourceName: signal.sourceName,
+      biasLean: signal.biasLean,
+      verificationMethod: signal.verificationMethod,
+      sourceLane: signal.sourceLane,
       publishedAt: signal.publishedAt ?? null,
     });
   }
@@ -637,10 +657,11 @@ async function fetchSignals(source: SignalSource, timeoutMs: number): Promise<Ra
       sourceName: clean(String(article.domain ?? source.name)),
       sourceType: source.type,
       sourceCountry: clean(String(article.sourcecountry ?? "")),
-      language: clean(String(article.language ?? "")),
+      language: clean(String(article.language ?? source.language ?? "")),
       publishedAt: parseGdeltDate(String(article.seendate ?? "")),
       sourceId: source.id,
       sourcePriority: source.priority,
+      ...signalMetadata(source),
     })).filter((signal) => isUsableSignal(signal.title, signal.summary, signal.language) && !isNoiseSignal(signal.title, signal.summary));
   }
 
@@ -700,6 +721,27 @@ async function fetchWithTimeout(
   }
 }
 
+function signalMetadata(source: SignalSource): Pick<RawSignal, "biasLean" | "verificationMethod" | "sourceLane"> {
+  return {
+    biasLean: source.biasLean ?? "unknown",
+    verificationMethod:
+      source.verificationMethod ||
+      `Source lane ${source.sourceLane ?? source.type}; corroborate with source trail and primary records before scripting.`,
+    sourceLane: source.sourceLane ?? defaultSourceLane(source),
+  };
+}
+
+function defaultSourceLane(source: SignalSource): NonNullable<RawSignal["sourceLane"]> {
+  const text = `${source.name} ${source.category} ${source.type} ${source.url}`.toLowerCase();
+  if (/fact.?check|alt news|boom|factly|pib fact check/.test(text)) return "factcheck";
+  if (/x\.com|twitter|reddit|youtube|social|viral/.test(text)) return "social";
+  if (/regional|hindi|aaj tak|amar ujala|bhaskar|jagran|lokmat|eenadu|dinamalar|anandabazar/.test(text)) return "regional";
+  if (/pti|uni|ani|reuters|associated press|agency|wire/.test(text)) return "agency";
+  if (/official|primary|pib|pmindia|mea|court|prs|parliament|gov\.in/.test(text)) return "official";
+  if (/research/.test(text)) return "research";
+  return "portal";
+}
+
 function parseFeed(xml: string, source: SignalSource): RawSignal[] {
   const items = Array.from(xml.matchAll(/<item\b[\s\S]*?<\/item>/gi)).slice(0, 18);
   const entries = items.length
@@ -726,10 +768,11 @@ function parseFeed(xml: string, source: SignalSource): RawSignal[] {
         sourceName,
         sourceType: source.type,
         sourceCountry: source.region,
-        language: "",
+        language: source.language ?? "",
         publishedAt,
         sourceId: source.id,
         sourcePriority: source.priority,
+        ...signalMetadata(source),
       };
     })
     .filter((signal) => isUsableSignal(signal.title, signal.summary, signal.language) && !isNoiseSignal(signal.title, signal.summary))
@@ -796,7 +839,19 @@ function signalToStoryLike(signal: RawSignal): StoredStory {
     politicalWeight: 0,
     geopoliticalRelevance: 0,
     viralPotential: 0,
+    sentimentScore: 50,
     totalScore: 0,
+    scoringBreakdown: {
+      noveltySignals: [],
+      politicalSignals: [],
+      geopoliticalSignals: [],
+      viralSignals: [],
+      sentimentSignals: [],
+      velocitySignal: "",
+      sourceSignal: "",
+      formula: "",
+    },
+    verificationMethod: signal.verificationMethod ?? "",
     tags: [],
   };
 }
@@ -871,10 +926,11 @@ function parseHtmlPage(html: string, source: SignalSource): RawSignal[] {
         sourceName: source.name,
         sourceType: source.type,
         sourceCountry: source.region,
-        language: "",
+        language: source.language ?? "",
         publishedAt: null,
         sourceId: source.id,
         sourcePriority: source.priority,
+        ...signalMetadata(source),
       };
     })
     .filter((signal): signal is RawSignal => Boolean(signal))

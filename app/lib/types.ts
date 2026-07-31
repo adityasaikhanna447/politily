@@ -10,6 +10,19 @@ export type SourceType =
   | "legal";
 
 export type StoryStatus = "watching" | "triggered" | "briefed" | "emailed";
+export type BiasLean = "left" | "center" | "right" | "state-owned" | "mixed" | "unknown";
+export type SourceLane = "portal" | "official" | "agency" | "regional" | "social" | "factcheck" | "research";
+
+export interface ScoringBreakdown {
+  noveltySignals: string[];
+  politicalSignals: string[];
+  geopoliticalSignals: string[];
+  viralSignals: string[];
+  sentimentSignals: string[];
+  velocitySignal: string;
+  sourceSignal: string;
+  formula: string;
+}
 
 export interface RuntimeEnv {
   DB?: D1Database;
@@ -38,6 +51,10 @@ export interface SignalSource {
   category: string;
   priority: number;
   active: boolean;
+  biasLean?: BiasLean;
+  verificationMethod?: string;
+  language?: string;
+  sourceLane?: SourceLane;
   createdAt?: string;
   lastCheckedAt?: string | null;
 }
@@ -55,6 +72,9 @@ export interface RawSignal {
   publishedAt?: string | null;
   sourceId: string;
   sourcePriority: number;
+  biasLean?: BiasLean;
+  verificationMethod?: string;
+  sourceLane?: SourceLane;
 }
 
 export interface StoryScores {
@@ -62,8 +82,10 @@ export interface StoryScores {
   politicalWeight: number;
   geopoliticalRelevance: number;
   viralPotential: number;
+  sentimentScore: number;
   totalScore: number;
   tags: string[];
+  scoringBreakdown: ScoringBreakdown;
 }
 
 export interface StoredStory extends StoryScores {
@@ -81,6 +103,7 @@ export interface StoredStory extends StoryScores {
   publishedAt: string | null;
   detectedAt: string;
   status: StoryStatus;
+  verificationMethod?: string;
   brief?: PolitilyBrief | null;
   scriptText?: string | null;
   emailSentAt?: string | null;
@@ -94,6 +117,9 @@ export interface StorySourceLink {
   url: string;
   sourceName: string;
   publishedAt: string | null;
+  biasLean?: BiasLean;
+  verificationMethod?: string;
+  sourceLane?: SourceLane;
   createdAt?: string;
 }
 

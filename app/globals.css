@@ -1196,15 +1196,16 @@ a {
 }
 
 .issue-micro-grid {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 7px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .issue-micro {
   background: rgba(234, 236, 238, 0.04);
   border: 1px solid var(--line);
   border-radius: 8px;
+  flex: 1 1 84px;
   min-width: 0;
   padding: 7px 6px;
 }
@@ -1254,8 +1255,15 @@ a {
   margin-top: 10px;
 }
 
+.credibility-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .issue-source-strip span,
 .issue-source-strip strong,
+.credibility-strip span,
 .issue-proof-row strong,
 .issue-proof-row span {
   background: rgba(34, 98, 166, 0.14);
@@ -1265,6 +1273,12 @@ a {
   font-size: 10px;
   font-weight: 900;
   padding: 4px 8px;
+}
+
+.credibility-strip span {
+  background: rgba(214, 206, 194, 0.08);
+  border-color: rgba(214, 206, 194, 0.16);
+  color: var(--muted);
 }
 
 .issue-source-strip strong {
@@ -1575,6 +1589,16 @@ a {
   margin-top: 6px;
 }
 
+.score-breakdown-list {
+  color: var(--muted);
+  display: grid;
+  font-size: 12px;
+  gap: 5px;
+  line-height: 1.45;
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
 .research-tile {
   background: var(--card-2);
   border: 1px solid var(--line);
@@ -1613,6 +1637,15 @@ a {
   display: block;
   font-size: 12px;
   margin-top: 3px;
+}
+
+.source-trail a small,
+.source-meta-line {
+  color: var(--faint);
+  display: block;
+  font-size: 10px;
+  line-height: 1.35;
+  margin-top: 4px;
 }
 
 .brief-empty {
@@ -2350,7 +2383,7 @@ select:focus-visible {
       "top"
       "body";
     grid-template-columns: minmax(0, 1fr);
-    min-height: 132px;
+    min-height: 0;
   }
 
   .issue-card-top {
@@ -2390,7 +2423,8 @@ select:focus-visible {
   }
 
   .issue-source-strip span,
-  .issue-source-strip strong {
+  .issue-source-strip strong,
+  .credibility-strip span {
     border-radius: 6px;
   }
 
@@ -2453,7 +2487,7 @@ select:focus-visible {
 
   .selected-story-footer {
     background: rgba(2, 4, 5, 0.97);
-    bottom: 30px;
+    bottom: 34px;
     display: grid;
     left: 50%;
     max-width: 920px;
@@ -2586,6 +2620,7 @@ select:focus-visible {
 
   .story-post.issue-card.no-media {
     grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
   }
 
   .issue-card-top {
@@ -2622,7 +2657,7 @@ select:focus-visible {
 
   .selected-story-footer {
     background: rgba(2, 4, 5, 0.96);
-    bottom: 58px;
+    bottom: calc(76px + env(safe-area-inset-bottom));
   }
 
   .issue-detail-overlay {

@@ -13,12 +13,13 @@ function gdeltUrl(query: string, maxrecords = 8, timespan = "7d") {
   return `https://api.gdeltproject.org/api/v2/doc/doc?${params.toString()}`;
 }
 
-function googleNewsRss(query: string) {
+function googleNewsRss(query: string, language = "en") {
+  const hl = language === "hi" ? "hi-IN" : "en-IN";
   const params = new URLSearchParams({
     q: query,
-    hl: "en-IN",
+    hl,
     gl: "IN",
-    ceid: "IN:en",
+    ceid: `IN:${language}`,
   });
 
   return `https://news.google.com/rss/search?${params.toString()}`;
@@ -56,6 +57,88 @@ export const DEFAULT_SOURCES: SignalSource[] = [
     region: "india",
     category: "Freshness / party election watch",
     priority: 128,
+    active: true,
+  },
+  {
+    id: "fresh-google-hindi-politics-24h",
+    name: "Hindi Political Signals 24h",
+    type: "rss",
+    url: googleNewsRss("भारत राजनीति चुनाव संसद सरकार विरोध कांग्रेस भाजपा बेरोजगारी महंगाई when:1d", "hi"),
+    region: "india/hindi-belt",
+    category: "Regional language / Hindi politics",
+    biasLean: "unknown",
+    verificationMethod:
+      "Regional-language lane: translate headline, compare with one Hindi/regional source and one national/official source before scripting.",
+    language: "Hindi",
+    sourceLane: "regional",
+    priority: 127,
+    active: false,
+  },
+  {
+    id: "fresh-google-hindi-politics-clean-24h",
+    name: "Hindi Political Signals Clean 24h",
+    type: "rss",
+    url: googleNewsRss(
+      "(site:bhaskar.com OR site:amarujala.com OR site:jagran.com OR site:livehindustan.com OR site:abplive.com) rajneeti chunav sansad sarkar virodh congress bjp berozgari mehengai when:1d",
+      "hi"
+    ),
+    region: "india/hindi-belt",
+    category: "Regional language / Hindi politics",
+    biasLean: "unknown",
+    verificationMethod:
+      "Regional-language lane: translate headline, compare with one Hindi/regional source and one national/official source before scripting.",
+    language: "Hindi",
+    sourceLane: "regional",
+    priority: 127,
+    active: true,
+  },
+  {
+    id: "fresh-google-regional-language-politics-24h",
+    name: "Regional Language Political Signals",
+    type: "rss",
+    url: googleNewsRss(
+      "(site:bhaskar.com OR site:amarujala.com OR site:jagran.com OR site:livehindustan.com OR site:abplive.com OR site:lokmat.com OR site:eenadu.net OR site:anandabazar.com OR site:mathrubhumi.com) politics election protest government when:1d"
+    ),
+    region: "india/regional",
+    category: "Regional language / early signal",
+    biasLean: "unknown",
+    verificationMethod:
+      "Regional-language lane: useful for early local signal; verify translation, local context, and corroboration from official/national sources.",
+    language: "Regional",
+    sourceLane: "regional",
+    priority: 126,
+    active: true,
+  },
+  {
+    id: "fresh-social-viral-politics",
+    name: "Social/Viral Political Signal Watch",
+    type: "rss",
+    url: googleNewsRss(
+      '(site:x.com OR site:twitter.com OR site:reddit.com OR site:youtube.com) India politics protest election parliament "viral" OR "trending" when:1d'
+    ),
+    region: "india/social",
+    category: "Social/Viral / early chatter",
+    biasLean: "unknown",
+    verificationMethod:
+      "Social/viral lane: early signal only; verify original post, timestamp, manipulated-media risk, and independent reporting before scripting.",
+    language: "Mixed",
+    sourceLane: "social",
+    priority: 124,
+    active: true,
+  },
+  {
+    id: "fresh-economy-policy-24h",
+    name: "Economy/Policy Political Watch",
+    type: "gdelt",
+    url: gdeltUrl('India (budget OR inflation OR unemployment OR welfare OR subsidy OR scheme OR GST OR jobs OR "economic policy") politics government', 10, "1d"),
+    region: "india",
+    category: "Economy/Policy",
+    biasLean: "unknown",
+    verificationMethod:
+      "Economy/policy lane: verify with budget documents, ministry data, RBI/NSO/CMIE style datasets, and affected-group reporting.",
+    language: "English",
+    sourceLane: "portal",
+    priority: 123,
     active: true,
   },
   {
@@ -449,6 +532,23 @@ export const DEFAULT_SOURCES: SignalSource[] = [
     active: true,
   },
   {
+    id: "gdelt-economy-policy-watch",
+    name: "Economy, Budget, Welfare, Jobs",
+    type: "gdelt",
+    url: gdeltUrl(
+      'India (budget OR inflation OR unemployment OR welfare OR subsidy OR "free ration" OR jobs OR GST OR tax OR "economic policy" OR "social security")'
+    ),
+    region: "india",
+    category: "Economy/Policy",
+    biasLean: "unknown",
+    verificationMethod:
+      "Economy/policy lane: verify claims against official datasets, budget papers, ministry releases, independent economists, and affected-state context.",
+    language: "English",
+    sourceLane: "portal",
+    priority: 91,
+    active: true,
+  },
+  {
     id: "gdelt-punjab-culture-censorship",
     name: "Punjab, Culture, Film Ban Context",
     type: "gdelt",
@@ -498,14 +598,36 @@ export const DEFAULT_SOURCES: SignalSource[] = [
   },
   {
     id: "gdelt-geopolitics",
-    name: "Geopolitics + International Reaction",
+    name: "Foreign Policy - India",
     type: "gdelt",
     url: gdeltUrl(
-      '"foreign minister" OR sanctions OR border OR treaty OR conflict OR diplomacy OR summit OR "international reaction" OR "United Nations" OR G7 OR BRICS OR "Global South"'
+      'India ("foreign minister" OR MEA OR Jaishankar OR China OR Pakistan OR "United States" OR border OR LAC OR LOC OR treaty OR diplomacy OR summit OR BRICS OR "Global South")'
     ),
     region: "global",
-    category: "Geopolitics",
+    category: "Foreign Policy - India",
+    biasLean: "unknown",
+    verificationMethod:
+      "Foreign-policy lane: verify with MEA statement, foreign government statement, treaty/border record, and international reaction.",
+    language: "English",
+    sourceLane: "portal",
     priority: 88,
+    active: true,
+  },
+  {
+    id: "gdelt-global-politics",
+    name: "Global Politics Monitor",
+    type: "gdelt",
+    url: gdeltUrl(
+      '"United Nations" OR G7 OR NATO OR "European Union" OR Russia OR Ukraine OR "Middle East" OR "global election" OR sanctions OR ceasefire OR coup OR "international reaction"'
+    ),
+    region: "global",
+    category: "Global Politics",
+    biasLean: "unknown",
+    verificationMethod:
+      "Global politics lane: verify against primary diplomatic records, Reuters/AP/agency trail, and at least one regional/international source.",
+    language: "English",
+    sourceLane: "portal",
+    priority: 84,
     active: true,
   },
   {

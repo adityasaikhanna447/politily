@@ -6,8 +6,8 @@ It watches open political sources, scores new stories, generates context-rich br
 
 ## What It Does
 
-- Monitors GDELT, official RSS feeds, and press-release sources.
-- Scores stories for novelty, political weight, geopolitical relevance, and viral potential.
+- Monitors GDELT, official RSS feeds, national/regional portals, agency wires, and social/viral early-signal lanes.
+- Scores stories for novelty, political weight, India/global geopolitical relevance, viral potential, and public mood risk.
 - Stores seen stories and scan history in Cloudflare D1.
 - Uses Gemini to generate historical context, geographical context, facts, narratives, source confidence, and a video script.
 - Sends alert emails through Resend.
@@ -62,7 +62,7 @@ Never commit `.env` files.
 ## Email Rhythm
 
 - Source scan: every 5 minutes.
-- Scheduled digest: two table reports per day, 12:00 PM IST and 9:00 PM IST.
+- Scheduled digest: two table reports per day, 2:00 PM IST and 9:00 PM IST.
 - Instant alerts: only new or strengthened issues scoring `85/100` or higher.
 - Gemini tokens are not used for scanning or scheduled digests; they are used only when a deep brief/script is generated.
 

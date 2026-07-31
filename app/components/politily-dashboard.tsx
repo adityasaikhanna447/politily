@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { DashboardState, SignalSource, StoredStory, StorySourceLink } from "../lib/types";
+import type { BiasLean, DashboardState, SignalSource, SourceLane, StoredStory, StorySourceLink } from "../lib/types";
 import { getDemoState } from "../lib/demo-data";
 import {
   canonicalIssueKey,
@@ -32,6 +32,11 @@ interface EnrichedStory extends StoredStory {
   sourcePriority: number | null;
   videoAngle: string;
   verificationState: string;
+  verificationMethod: string;
+  biasSummary: string;
+  sourceLaneSummary: string;
+  scoringBreakdownLines: string[];
+  sentimentLabel: string;
 }
 
 interface IssueCluster {
@@ -68,8 +73,14 @@ const TOPIC_RULES: TopicRule[] = [
   {
     id: "parliament",
     label: "Parliament",
-    keywords: ["parliament", "lok sabha", "rajya sabha", "bill", "ordinance", "committee", "policy", "regulation"],
+    keywords: ["parliament", "lok sabha", "rajya sabha", "bill", "ordinance", "committee", "speaker", "question hour"],
     summary: "Bills, policy changes, legislative conflict, committee work, and governance decisions that need document-led explainers.",
+  },
+  {
+    id: "economy-policy",
+    label: "Economy/Policy",
+    keywords: ["budget", "inflation", "unemployment", "jobs", "welfare", "scheme", "subsidy", "gst", "tax", "rbi", "nso", "poverty", "ration"],
+    summary: "Budget, jobs, inflation, welfare, tax, and policy-impact stories where data and public consequence matter most.",
   },
   {
     id: "courts",
@@ -92,14 +103,44 @@ const TOPIC_RULES: TopicRule[] = [
   {
     id: "party",
     label: "Party/BJP",
-    keywords: ["bjp", "congress", "aap", "tmc", "dmk", "rjd", "jdu", "alliance", "opposition", "defection", "coalition", "star campaigner"],
-    summary: "Party strategy, statements, alliances, defections, attack lines, and narrative competition.",
+    keywords: ["bjp", "bharatiya janata party", "nda", "rss", "modi", "shah", "jp nadda", "nitin nabin"],
+    summary: "BJP/NDA strategy, statements, alliances, defections, attack lines, and narrative competition.",
   },
   {
-    id: "geopolitics",
-    label: "Geopolitics",
-    keywords: ["foreign", "border", "china", "pakistan", "summit", "treaty", "sanction", "diplomacy", "united nations", "brics"],
+    id: "party-congress",
+    label: "Party/Congress",
+    keywords: ["congress", "rahul gandhi", "mallikarjun kharge", "priyanka gandhi", "inc", "youth congress", "nsui"],
+    summary: "Congress strategy, internal conflict, opposition positioning, candidate moves, and attack lines.",
+  },
+  {
+    id: "party-regional",
+    label: "Party/Regional",
+    keywords: ["aap", "tmc", "dmk", "rjd", "jdu", "sp", "samajwadi", "shiv sena", "ncp", "ysrcp", "tdp", "brs", "trs", "akali", "aiadmk", "bjd", "regional party"],
+    summary: "State-party moves, regional bargaining, caste/community arithmetic, and local power shifts that national media can miss.",
+  },
+  {
+    id: "opposition-india",
+    label: "Opposition/INDIA bloc",
+    keywords: ["india bloc", "i.n.d.i.a", "opposition bloc", "mahagathbandhan", "alliance meeting", "seat sharing", "opposition unity"],
+    summary: "Opposition coordination, seat-sharing fights, joint protests, floor strategy, and alliance credibility.",
+  },
+  {
+    id: "foreign-policy-india",
+    label: "Foreign Policy - India",
+    keywords: ["mea", "jaishankar", "foreign", "border", "china", "pakistan", "us", "america", "summit", "treaty", "sanction", "diplomacy", "brics", "quad"],
     summary: "Foreign policy, border, diplomacy, sanctions, and international reaction that need India-first context.",
+  },
+  {
+    id: "global-politics",
+    label: "Global Politics",
+    keywords: ["united nations", "un ", "nato", "gaza", "ukraine", "russia", "israel", "iran", "europe", "africa", "latin america", "global politics"],
+    summary: "International political shifts outside India that can still shape Indian narratives, diplomacy, or diaspora debate.",
+  },
+  {
+    id: "social-viral",
+    label: "Social/Viral",
+    keywords: ["viral", "trending", "x.com", "twitter", "reddit", "youtube", "instagram", "social media", "video claim", "hashtag"],
+    summary: "Early chatter from social platforms. Useful for speed, but never publish without independent verification.",
   },
   {
     id: "factcheck",
@@ -116,15 +157,15 @@ const SCORE_EXPLAINERS: Record<ScoreKey, { label: string; method: string }> = {
   },
   politicalWeight: {
     label: "Political weight",
-    method: "Looks for institutions, parties, elections, courts, policy, ministers, opposition, and governance terms.",
+    method: "Looks for institutions, parties, elections, courts, policy, ministers, opposition, source priority, and governance terms.",
   },
   geopoliticalRelevance: {
     label: "Geo relevance",
-    method: "Looks for border, diplomacy, foreign affairs, sanctions, China, Pakistan, UN, BRICS, and global reaction terms.",
+    method: "Splits India foreign-policy signals from wider global politics using border, diplomacy, sanctions, China, Pakistan, UN, BRICS, and global reaction terms.",
   },
   viralPotential: {
     label: "Viral potential",
-    method: "Looks for conflict, bans, arrests, protests, corruption, public-order risk, identity issues, numbers, and headline tension.",
+    method: "Looks for conflict, bans, arrests, protests, corruption, public-order risk, identity issues, numbers, headline tension, freshness, and source velocity.",
   },
 };
 
@@ -141,7 +182,7 @@ export function PolitilyDashboard() {
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedTopic, setSelectedTopic] = useState("all");
-  const [sortKey, setSortKey] = useState<SortKey>("rank");
+  const [sortKey, setSortKey] = useState<SortKey>("recent");
   const [scoreFocus, setScoreFocus] = useState<ScoreKey>("viralPotential");
   const [emailStartDate, setEmailStartDate] = useState(() => todayDateInput());
   const [emailEndDate, setEmailEndDate] = useState(() => todayDateInput());
@@ -345,6 +386,7 @@ export function PolitilyDashboard() {
   const sourceMix = useMemo(() => buildSourceMix(sources), [sources]);
   const portalNames = useMemo(() => buildPortalNames(enrichedStories), [enrichedStories]);
   const latestRun = state?.runs[0];
+  const lastSuccessfulRun = state?.runs.find((run) => run.status === "complete");
   const latestSignalAt = newestStoryTime(enrichedStories);
   const triggeredCount = enrichedStories.filter((story) => story.totalScore >= (state?.config.threshold ?? 72)).length;
   const briefedCount = enrichedStories.filter((story) => story.brief).length;
@@ -373,9 +415,9 @@ export function PolitilyDashboard() {
   const selectedIssueCluster = useMemo(
     () =>
       selectedStory
-        ? buildIssueClusters(enrichedStories).find((cluster) => cluster.stories.some((story) => story.id === selectedStory.id))
+        ? buildIssueClusters(enrichedStories, sortKey).find((cluster) => cluster.stories.some((story) => story.id === selectedStory.id))
         : undefined,
-    [enrichedStories, selectedStory]
+    [enrichedStories, selectedStory, sortKey]
   );
 
   return (
@@ -400,8 +442,8 @@ export function PolitilyDashboard() {
         />
         <div className="top-actions">
           <div className="crawl-chip">
-            <span>Last scan</span>
-            <strong>{latestRun ? formatDateTime(latestRun.finishedAt || latestRun.startedAt) : "Waiting"}</strong>
+            <span>Last successful scan</span>
+            <strong>{lastSuccessfulRun ? formatDateTime(lastSuccessfulRun.finishedAt || lastSuccessfulRun.startedAt) : "Waiting"}</strong>
           </div>
           <div className="score-chip portal-chip">
             <strong>{portalNames.length}</strong>
@@ -454,7 +496,7 @@ export function PolitilyDashboard() {
 
       <section className="orm-main">
         <div className="system-note">
-          <span>{status}. Showing news from {MIN_VISIBLE_STORY_LABEL} onward.</span>
+          <span>{status}. Scan every 5 min. Next approx {nextScanLabel(lastSuccessfulRun)}.</span>
           <strong>
             {freshnessLabel(latestSignalAt)}. {portalNames.length} portals cited. D1 tables: 4 normal tables.
           </strong>
@@ -464,6 +506,7 @@ export function PolitilyDashboard() {
           <span>Since {MIN_VISIBLE_STORY_LABEL}</span>
           <strong>{enrichedStories.length} signals</strong>
           <strong>{freshnessShortLabel(latestSignalAt)}</strong>
+          <strong>Next {nextScanLabel(lastSuccessfulRun)}</strong>
           <strong>{portalNames.length} portals</strong>
           <strong>{formatTokens(tokenTotal)} tokens</strong>
         </div>
@@ -679,6 +722,10 @@ function IssueDetailPage({
           </section>
           <ResearchTile label="Video angle" value={story.videoAngle} />
           <ResearchTile label="Verification state" value={story.verificationState} />
+          <ResearchTile label="Verification method" value={story.verificationMethod} />
+          <ResearchTile label="Source lanes" value={story.sourceLaneSummary} />
+          <ResearchTile label="Credibility bias" value={story.biasSummary} />
+          <ResearchTile label="Sentiment / backlash" value={story.sentimentLabel} />
           <ResearchTile label="Audience reach why" value={story.reachReason} />
           <ResearchTile label="Token use" value={briefTokenLabel(story.brief)} />
           <section className="panel span-2">
@@ -689,6 +736,11 @@ function IssueDetailPage({
               <ScoreReadout label="Geo" value={story.geopoliticalRelevance} />
               <ScoreReadout label="Viral" value={story.viralPotential} />
             </div>
+            <ul className="score-breakdown-list">
+              {story.scoringBreakdownLines.slice(0, 8).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
           </section>
           {relatedReports.length ? (
             <section className="panel span-2">
@@ -876,7 +928,7 @@ function WatchDesk({
   onGenerate: (storyId: string) => void;
   onResearchQuery: (query: string) => void;
 }) {
-  const clusters = useMemo(() => buildIssueClusters(stories), [stories]);
+  const clusters = useMemo(() => buildIssueClusters(stories, sortKey), [stories, sortKey]);
   const selectedCluster = selectedStory
     ? clusters.find((cluster) => cluster.stories.some((story) => story.id === selectedStory.id))
     : clusters[0];
@@ -1005,6 +1057,11 @@ function IssueClusterCard({
           ))}
           {cluster.sources.length > sourcePreview.length ? <strong>+{cluster.sources.length - sourcePreview.length}</strong> : null}
         </div>
+        <div className="credibility-strip">
+          <span>{lead.sourceLaneSummary}</span>
+          <span>{lead.biasSummary}</span>
+          <span>{lead.sentimentLabel}</span>
+        </div>
         <div className="issue-micro-grid">
           <span className="issue-micro">
             <b>{lead.viralPotential}</b>
@@ -1021,6 +1078,10 @@ function IssueClusterCard({
           <span className="issue-micro">
             <b>{cluster.stories.length}</b>
             <small>Reports</small>
+          </span>
+          <span className="issue-micro">
+            <b>{lead.sentimentScore}</b>
+            <small>Mood</small>
           </span>
         </div>
         <div className="post-signal-line">
@@ -1168,12 +1229,23 @@ function StoryDossier({
       <div className="score-explain">
         <strong>{explainer.title}</strong>
         <p>{explainer.body}</p>
+        {story.scoringBreakdownLines.length ? (
+          <ul className="score-breakdown-list">
+            {story.scoringBreakdownLines.slice(0, 6).map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        ) : null}
         <small>Priority formula: novelty 24%, political 31%, geo 20%, viral 25%.</small>
       </div>
 
       <div className="insight-grid">
         <ResearchTile label="Video angle" value={story.videoAngle} />
         <ResearchTile label="Verification state" value={story.verificationState} />
+        <ResearchTile label="Verification method" value={story.verificationMethod} />
+        <ResearchTile label="Credibility bias" value={story.biasSummary} />
+        <ResearchTile label="Source lanes" value={story.sourceLaneSummary} />
+        <ResearchTile label="Sentiment / backlash" value={story.sentimentLabel} />
         <ResearchTile label="Token use" value={briefTokenLabel(story.brief)} />
         <ResearchTile label="Audience reach why" value={story.reachReason} />
       </div>
@@ -1301,6 +1373,7 @@ function SourceDesk({ sources, sourceMix }: { sources: SignalSource[]; sourceMix
           <StrategyRow label="Agency" value="PTI, ANI, Reuters, AP used for speed and triangulation." />
           <StrategyRow label="National media" value="Indian Express, The Hindu, HT, NDTV, ET and others used for framing comparison." />
           <StrategyRow label="Regional" value="State-level and local context before calling a story propaganda, censorship, or public-order risk." />
+          <StrategyRow label="Social/Viral" value="X, Reddit, YouTube and viral-search lanes are early-warning only; confirm before scripting." />
         </div>
       </div>
       <div className="panel">
@@ -1323,6 +1396,10 @@ function SourceDesk({ sources, sourceMix }: { sources: SignalSource[]; sourceMix
                   <div>
                     <strong>{source.name}</strong>
                     <span>{source.url}</span>
+                    <span className="source-meta-line">
+                      {formatSourceLaneLabel(source.sourceLane)} | {formatBiasLabel(source.biasLean)} | {source.language || "language unknown"}
+                    </span>
+                    <span className="source-meta-line">{source.verificationMethod || "Verification: compare with at least one independent source before scripting."}</span>
                   </div>
                   <small>{source.region}</small>
                   <b>{source.priority}</b>
@@ -1477,6 +1554,9 @@ function SourceTrail({ links }: { links: StorySourceLink[] }) {
           <a href={link.url} key={`${link.sourceName}-${link.url}`} rel="noreferrer" target="_blank">
             <span>{cleanDisplayText(link.sourceName)}</span>
             <strong>{cleanDisplayText(link.title)}</strong>
+            <small>
+              {formatSourceLaneLabel(link.sourceLane)} | {formatBiasLabel(link.biasLean)} | {link.verificationMethod || "corroborate before scripting"}
+            </small>
           </a>
         ))
       ) : (
@@ -1498,6 +1578,19 @@ function enrichStory(story: StoredStory, sources: SignalSource[]): EnrichedStory
   const sourceLinks = uniqueStoryLinks(story.sourceLinks ?? []);
   const sourceNames = Array.from(new Set([displayStory.sourceName, ...sourceLinks.map((link) => cleanDisplayText(link.sourceName))].filter(Boolean)));
   const matchingSource = sources.find((source) => source.name.toLowerCase() === story.sourceName.toLowerCase());
+  const sourceBiases = uniqueStrings([
+    displayStory.sourceName ? matchingSource?.biasLean ?? inferBiasFromName(displayStory.sourceName) : "",
+    ...sourceLinks.map((link) => link.biasLean ?? inferBiasFromName(link.sourceName)),
+  ]);
+  const sourceLanes = uniqueStrings([
+    matchingSource?.sourceLane ?? inferLaneFromSource(matchingSource, displayStory.sourceName),
+    ...sourceLinks.map((link) => link.sourceLane ?? inferLaneFromSource(undefined, link.sourceName)),
+  ]);
+  const verificationMethod =
+    story.verificationMethod ||
+    sourceLinks.find((link) => link.verificationMethod)?.verificationMethod ||
+    matchingSource?.verificationMethod ||
+    verificationMethodForDashboard(story, sourceNames.length);
   const reachScore = story.brief?.audienceReachScore ?? clamp(Math.round(story.totalScore * 0.72 + story.viralPotential * 0.18 + story.politicalWeight * 0.1));
   const newsSnippet = cleanSummary(displayStory.articleExcerpt || displayStory.summary, displayStory, 175);
 
@@ -1514,11 +1607,25 @@ function enrichStory(story: StoredStory, sources: SignalSource[]): EnrichedStory
     sourcePriority: matchingSource?.priority ?? null,
     videoAngle: story.brief?.videoAngles?.[0] || videoAngleFor(story, topics),
     verificationState: verificationState(story, sourceNames.length),
+    verificationMethod,
+    biasSummary: sourceBiases.length ? sourceBiases.map(formatBiasLabel).join(", ") : "Bias: unknown",
+    sourceLaneSummary: sourceLanes.length ? sourceLanes.map(formatSourceLaneLabel).join(", ") : "Lane: portal",
+    scoringBreakdownLines: buildScoringBreakdownLines(story, sourceNames.length),
+    sentimentLabel: sentimentLabel(story.sentimentScore),
   };
 }
 
 function deriveTopics(story: StoredStory) {
-  const text = `${story.title} ${story.summary} ${story.sourceName} ${story.tags.join(" ")}`.toLowerCase();
+  const text = [
+    story.title,
+    story.summary,
+    story.sourceName,
+    story.verificationMethod || "",
+    story.tags.join(" "),
+    (story.sourceLinks ?? [])
+      .map((link) => `${link.sourceName} ${link.sourceLane ?? ""} ${link.biasLean ?? ""} ${link.verificationMethod ?? ""}`)
+      .join(" "),
+  ].join(" ").toLowerCase();
   const matches = TOPIC_RULES.filter((topic) => topic.keywords.some((keyword) => text.includes(keyword)));
   return matches.length ? matches : [TOPIC_RULES[0]];
 }
@@ -1537,7 +1644,7 @@ function buildTopicStats(stories: EnrichedStory[]) {
 function buildSourceMix(sources: SignalSource[]) {
   const groups = new Map<string, { label: string; count: number; active: number }>();
   sources.forEach((source) => {
-    const label = source.category.split("/")[0].trim() || source.type;
+    const label = formatSourceLaneLabel(source.sourceLane) || source.category.split("/")[0].trim() || source.type;
     const current = groups.get(label) ?? { label, count: 0, active: 0 };
     current.count += 1;
     current.active += source.active ? 1 : 0;
@@ -1561,9 +1668,9 @@ function buildPortalNames(stories: EnrichedStory[]) {
   return Array.from(names).sort((left, right) => left.localeCompare(right));
 }
 
-function buildIssueClusters(stories: EnrichedStory[]) {
+function buildIssueClusters(stories: EnrichedStory[], sortKey: SortKey = "recent") {
   const clusters: IssueCluster[] = [];
-  const sorted = stories.slice().sort((left, right) => compareStories(left, right, "rank"));
+  const sorted = stories.slice().sort((left, right) => compareStories(left, right, sortKey));
 
   sorted.forEach((story) => {
     const key = issueKey(story);
@@ -1576,8 +1683,8 @@ function buildIssueClusters(stories: EnrichedStory[]) {
       match.sources = uniqueStrings([...match.sources, ...story.sourceNames]);
       match.sourceLinks = uniqueStoryLinks(match.sourceLinks.concat(story.sourceLinks ?? []));
       match.reachScore = Math.max(match.reachScore, story.reachScore);
-      match.latestAt = dateValue(story.detectedAt) > dateValue(match.latestAt) ? story.detectedAt : match.latestAt;
-      if (story.reachScore > match.lead.reachScore) {
+      match.latestAt = storyDateValue(story) > dateValue(match.latestAt) ? storyDisplayTime(story) : match.latestAt;
+      if (compareStories(story, match.lead, sortKey) < 0) {
         match.lead = story;
         match.label = issueLabel(story);
       }
@@ -1593,11 +1700,11 @@ function buildIssueClusters(stories: EnrichedStory[]) {
       sources: story.sourceNames,
       sourceLinks: uniqueStoryLinks(story.sourceLinks ?? []),
       reachScore: story.reachScore,
-      latestAt: story.detectedAt,
+      latestAt: storyDisplayTime(story),
     });
   });
 
-  return clusters.sort((left, right) => right.reachScore - left.reachScore || dateValue(right.latestAt) - dateValue(left.latestAt));
+  return clusters.sort((left, right) => compareClusters(left, right, sortKey));
 }
 
 function issueKey(story: EnrichedStory) {
@@ -1622,10 +1729,10 @@ function removeSourceSuffix(value: string) {
 
 function compareStories(left: EnrichedStory, right: EnrichedStory, sortKey: SortKey) {
   if (sortKey === "recent") {
-    return dateValue(right.detectedAt) - dateValue(left.detectedAt);
+    return storyDateValue(right) - storyDateValue(left);
   }
   if (sortKey === "oldest") {
-    return dateValue(left.detectedAt) - dateValue(right.detectedAt);
+    return storyDateValue(left) - storyDateValue(right);
   }
   if (sortKey === "viral") {
     return right.viralPotential - left.viralPotential;
@@ -1637,7 +1744,27 @@ function compareStories(left: EnrichedStory, right: EnrichedStory, sortKey: Sort
     return (right.sourcePriority ?? 0) - (left.sourcePriority ?? 0) || right.sourceDiversity - left.sourceDiversity;
   }
 
-  return right.reachScore - left.reachScore || right.totalScore - left.totalScore;
+  return right.reachScore - left.reachScore || right.totalScore - left.totalScore || storyDateValue(right) - storyDateValue(left);
+}
+
+function compareClusters(left: IssueCluster, right: IssueCluster, sortKey: SortKey) {
+  if (sortKey === "recent") {
+    return dateValue(right.latestAt) - dateValue(left.latestAt);
+  }
+  if (sortKey === "oldest") {
+    return dateValue(left.latestAt) - dateValue(right.latestAt);
+  }
+  if (sortKey === "viral") {
+    return right.lead.viralPotential - left.lead.viralPotential || right.reachScore - left.reachScore;
+  }
+  if (sortKey === "political") {
+    return right.lead.politicalWeight - left.lead.politicalWeight || right.reachScore - left.reachScore;
+  }
+  if (sortKey === "source") {
+    return right.sources.length - left.sources.length || right.reachScore - left.reachScore;
+  }
+
+  return right.reachScore - left.reachScore || dateValue(right.latestAt) - dateValue(left.latestAt);
 }
 
 function scoreExplainer(story: EnrichedStory, key: ScoreKey) {
@@ -1677,6 +1804,85 @@ function verificationState(story: StoredStory, sourceDiversity: number) {
     return "Two-source trail. Needs primary document or regional context.";
   }
   return "Thin. Do not rely on this alone.";
+}
+
+function verificationMethodForDashboard(story: StoredStory, sourceDiversity: number) {
+  if (story.tags.includes("fact-check")) {
+    return `Fact-check lane: determined by claim language, fact-check source match, and ${sourceDiversity} corroborating source(s).`;
+  }
+  if (sourceDiversity >= 4) {
+    return `Cross-source corroboration: ${sourceDiversity} unique source(s) grouped under one issue; still verify primary documents.`;
+  }
+  if (story.sourceType === "official" || story.sourceType === "legal") {
+    return "Primary/official lane: verify the original order, press note, bill, or institutional document before scripting.";
+  }
+  return "Open-source lane: compare at least one primary record, one credible news report, and one counter-position before final video.";
+}
+
+function buildScoringBreakdownLines(story: StoredStory, sourceDiversity: number) {
+  const breakdown = story.scoringBreakdown;
+  const lines = [
+    breakdown.velocitySignal,
+    breakdown.sourceSignal || `${sourceDiversity} unique source(s) currently support this issue cluster.`,
+    breakdown.politicalSignals.length ? `Political signals: ${breakdown.politicalSignals.slice(0, 5).join(", ")}` : "",
+    breakdown.geopoliticalSignals.length ? `Foreign/global signals: ${breakdown.geopoliticalSignals.slice(0, 5).join(", ")}` : "",
+    breakdown.viralSignals.length ? `Viral signals: ${breakdown.viralSignals.slice(0, 5).join(", ")}` : "",
+    breakdown.sentimentSignals.length ? `Mood/backlash signals: ${breakdown.sentimentSignals.slice(0, 5).join(", ")}` : "",
+    breakdown.noveltySignals.length ? breakdown.noveltySignals[0] : "",
+    breakdown.formula || "Formula: novelty 24%, political 31%, geo 20%, viral 25%.",
+  ];
+
+  return uniqueStrings(lines);
+}
+
+function sentimentLabel(score: number) {
+  if (score >= 76) {
+    return `High backlash ${score}/100`;
+  }
+  if (score >= 58) {
+    return `Watch mood ${score}/100`;
+  }
+  return `Low mood risk ${score}/100`;
+}
+
+function formatBiasLabel(value?: BiasLean | string) {
+  const bias = (value || "unknown").toLowerCase();
+  if (bias === "state-owned") return "Bias: state-owned";
+  if (bias === "mixed") return "Bias: mixed";
+  if (bias === "left" || bias === "center" || bias === "right") return `Bias: ${bias}`;
+  return "Bias: unknown";
+}
+
+function formatSourceLaneLabel(value?: SourceLane | string) {
+  const lane = (value || "portal").toLowerCase();
+  if (lane === "official") return "Lane: official";
+  if (lane === "agency") return "Lane: agency";
+  if (lane === "regional") return "Lane: regional";
+  if (lane === "social") return "Lane: social/viral";
+  if (lane === "factcheck") return "Lane: fact-check";
+  if (lane === "research") return "Lane: research";
+  return "Lane: portal";
+}
+
+function inferBiasFromName(name: string): BiasLean {
+  const text = name.toLowerCase();
+  if (/pib|pmo|mea|prs|supreme court|election commission|government/.test(text)) return "state-owned";
+  if (/alt news|boom|factly/.test(text)) return "center";
+  if (/opindia/.test(text)) return "right";
+  if (/wire|scroll/.test(text)) return "left";
+  return "unknown";
+}
+
+function inferLaneFromSource(source: SignalSource | undefined, name: string): SourceLane {
+  if (source?.sourceLane) return source.sourceLane;
+  const text = `${name} ${source?.type ?? ""} ${source?.category ?? ""}`.toLowerCase();
+  if (/pib|pmo|mea|prs|court|official|government/.test(text)) return "official";
+  if (/pti|ani|reuters|associated press|ap news|agency/.test(text)) return "agency";
+  if (/bhaskar|amar ujala|jagran|lokmat|eenadu|anandabazar|mathrubhumi|regional|hindi/.test(text)) return "regional";
+  if (/x\.com|twitter|reddit|youtube|social|viral/.test(text)) return "social";
+  if (/alt news|boom|factly|fact check/.test(text)) return "factcheck";
+  if (/research/.test(text)) return "research";
+  return "portal";
 }
 
 function sumBriefTokens(stories: EnrichedStory[]) {
@@ -1723,9 +1929,15 @@ function storySearchText(story: EnrichedStory) {
     story.whatHappenedShort,
     story.sourceName,
     story.sourceNames.join(" "),
+    story.biasSummary,
+    story.sourceLaneSummary,
+    story.verificationMethod,
+    story.verificationState,
+    story.sentimentLabel,
+    story.scoringBreakdownLines.join(" "),
     story.tags.join(" "),
     story.topics.map((topic) => `${topic.label} ${topic.summary}`).join(" "),
-    (story.sourceLinks ?? []).map((link) => `${link.sourceName} ${link.title} ${link.url}`).join(" "),
+    (story.sourceLinks ?? []).map((link) => `${link.sourceName} ${link.title} ${link.url} ${link.biasLean ?? ""} ${link.sourceLane ?? ""} ${link.verificationMethod ?? ""}`).join(" "),
     brief?.briefTitle || "",
     brief?.hook || "",
     brief?.whatHappened || "",
@@ -1758,11 +1970,39 @@ function formatTokens(value: number) {
 
 function newestStoryTime(stories: EnrichedStory[]) {
   const newest = stories.reduce((max, story) => {
-    const value = dateValue(story.publishedAt || story.detectedAt);
+    const value = storyDateValue(story);
     return Math.max(max, value);
   }, 0);
 
   return newest || null;
+}
+
+function storyDateValue(story: StoredStory) {
+  return dateValue(story.publishedAt || story.detectedAt);
+}
+
+function storyDisplayTime(story: StoredStory) {
+  return story.publishedAt || story.detectedAt;
+}
+
+function nextScanLabel(run?: DashboardState["runs"][number]) {
+  const base = run?.finishedAt || run?.startedAt;
+  if (!base) {
+    return "within 5 min";
+  }
+
+  const parsed = Date.parse(base);
+  if (!Number.isFinite(parsed)) {
+    return "within 5 min";
+  }
+
+  const next = parsed + 5 * 60 * 1000;
+  const diffMinutes = Math.ceil((next - Date.now()) / 60000);
+  if (diffMinutes <= 0) {
+    return "any minute";
+  }
+
+  return `${diffMinutes} min`;
 }
 
 function freshnessLabel(value: number | null) {
