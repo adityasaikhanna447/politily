@@ -136,6 +136,9 @@ function normaliseGeminiBrief(
     openQuestions: normaliseList(parsed.openQuestions),
     monitoringQueries: normaliseList(parsed.monitoringQueries),
     noVideoUntil: normaliseList(parsed.noVideoUntil),
+    masterScriptQuestions: normaliseList(parsed.masterScriptQuestions),
+    masterScriptOutline: normaliseList(parsed.masterScriptOutline),
+    steppsStrategy: normaliseList(parsed.steppsStrategy),
     storytellingBeats: normaliseList(parsed.storytellingBeats),
     videoAngles: normaliseList(parsed.videoAngles),
     sourcePositions: normaliseList(parsed.sourcePositions),
@@ -151,6 +154,7 @@ function normaliseGeminiBrief(
       totalTokens: normaliseOptionalNumber(payload.usageMetadata?.totalTokenCount),
       model,
     },
+    scriptConclusion: String(parsed.scriptConclusion || ""),
     generatedBy: "gemini",
     generatedAt: new Date().toISOString(),
   };
@@ -199,6 +203,8 @@ Research editor rules:
 20. Add inline source markers in the videoScript for major factual claims using [S1], [S2], [S3] style, matching the source order in sourcePositions/citedUrls. Use [verify] when the claim needs a missing primary record.
 21. Facts and figures are mandatory. Do not leave factsAndFigures, dataPoints, accountabilityMap, claimMatrix, or primaryDocuments thin. If exact data is missing, write the exact dataset/document to pull, who controls it, and why it can change the conclusion.
 22. Every research report must answer: what number proves scale, what document proves authority, what timeline proves escalation, what actor background explains incentive, and what counter-evidence would weaken the story.
+23. The final videoScript must be a compiled master script, not a loose paragraph. It must first list the questions the video will answer, then build the issue as a story with timeline, data, actor background, institutional chain, strongest counter-view, conclusion, and CTA.
+24. Add a STEPPS strategy for creator packaging: Social Currency, Triggers, Emotion, Public, Practical Value, and Stories. This is not for manipulation; it is to make a truthful civic explainer memorable, shareable, and useful.
 
 Deep research chain to apply to every issue type:
 - Election/bypoll: constituency history, past margins, candidate background, caste/class/local blocs, alliances, turnout, affidavits, ECI schedule, local issues, and why the seat matters beyond the headline.
@@ -283,6 +289,9 @@ Return only valid JSON with this exact shape:
   "openQuestions": ["unanswered but important question"],
   "monitoringQueries": ["exact search query, source, institution, or record to monitor next"],
   "noVideoUntil": ["specific condition that must be met before this is worth a full video"],
+  "masterScriptQuestions": ["question the video will answer - why viewers should care - which evidence/section answers it"],
+  "masterScriptOutline": ["numbered master script section: purpose, core facts/data, story turn, source/proof to show, and viewer payoff"],
+  "steppsStrategy": ["Social Currency - what viewers feel smart sharing", "Triggers - real-world hook or timing cue", "Emotion - responsible emotion to build", "Public - visible behaviour/conversation this connects to", "Practical Value - what viewers learn/use", "Stories - narrative spine that carries the facts"],
   "storytellingBeats": ["creator beat: opening scene, setup, historical turn, evidence turn, counter-view, hard question, what next"],
   "videoAngles": ["specific video angle with hook, audience promise, and why this can/cannot go viral"],
   "sourcePositions": ["source name - what it claims or emphasizes - why it matters or its limitation"],
@@ -293,7 +302,8 @@ Return only valid JSON with this exact shape:
     "viralPotential": "why it can or cannot travel online",
     "audienceReach": "why this reaches Indian viewers"
   },
-  "videoScript": "2200-3000 words in Roman Hindi/Hinglish, not Devanagari. Structure: hard thesis/cold open, exact event, why now, actor background, institutional/decision chain, chronology, historical/regional background, data checkpoints, numbered escalation chain if useful, strongest government/defence view, strongest critic/protester/opposition view, what is unverified, why it matters for Indian viewers, what happens next, CTA. Use inline source markers like [S1], [S2], [verify] for factual claims. Sound like a serious original political creator research script, not a school assignment or generic summary.",
+  "videoScript": "2500-3400 words in Roman Hindi/Hinglish, not Devanagari. This must be a compiled master script with clear section labels: 1) Cold open/thesis, 2) Questions this video answers, 3) What happened with date/place/actors, 4) Full timeline, 5) Data and documents, 6) Key people and background, 7) Institutional/decision chain, 8) Why the issue escalated now, 9) STEPPS packaging strategy woven into truthful storytelling, 10) strongest government/defence view, 11) strongest critic/protester/opposition view, 12) what is unverified, 13) conclusion and what to watch next, 14) CTA. Use inline source markers like [S1], [S2], [verify] for factual claims. Sound like a serious original political creator research script, not a school assignment or generic summary.",
+  "scriptConclusion": "120-220 words in Roman Hindi/Hinglish. Final takeaway, what is proven, what is not proven, who must answer next, and why viewers should keep watching the issue.",
   "cta": "short Roman Hindi/Hinglish call to action",
   "caution": "what not to overclaim",
   "citedUrls": ["url"]
@@ -520,6 +530,9 @@ function templateBrief(
     ? `${strongestContext.sourceName} page indicates: ${strongestContext.excerpt.slice(0, 520)}`
     : story.articleExcerpt || story.summary || `A political signal was detected from ${story.sourceName}.`;
   const inferredTopic = inferStoryTopic(story);
+  const masterScriptQuestions = buildMasterScriptQuestions(story, inferredTopic);
+  const masterScriptOutline = buildMasterScriptOutline(story, inferredTopic);
+  const steppsStrategy = buildSteppsStrategy(story, inferredTopic);
 
   return {
     briefTitle: story.title,
@@ -607,6 +620,9 @@ function templateBrief(
       "At least two independent source positions explain the same issue without copying one another.",
       "The creator angle has a clear public consequence, accountability question, or document-backed contradiction.",
     ],
+    masterScriptQuestions,
+    masterScriptOutline,
+    steppsStrategy,
     storytellingBeats: inferredTopic.storytellingBeats,
     videoAngles: inferredTopic.videoAngles,
     sourcePositions: compactSources.length
@@ -620,6 +636,7 @@ function templateBrief(
       audienceReach: `Indian audience reach is estimated at ${story.totalScore}/100 from the combined story score.`,
     },
     videoScript: buildFallbackHindiScript(story, inferredTopic, contextLead),
+    scriptConclusion: `Conclusion: Is mudde par final video tabhi strong hoga jab creator clear rakhe ki kya proven hai, kya reported hai, aur kya abhi verify hona baaki hai. Sabse important next step primary document, official response, aur independent source trail ka comparison hai. Audience ko yeh samajhna chahiye ki headline ka political signal tabhi valuable hai jab uske peeche data, timeline, aur accountability chain clear ho.`,
     cta: "Aap comment me batayein: is mudde par sabse zaroori sawaal evidence ka hai, politics ka hai, ya public impact ka?",
     caution:
       "Do not publish allegations as facts. Separate confirmed records, reported claims, and political spin.",
@@ -633,6 +650,46 @@ function templateBrief(
     generatedBy: "template",
     generatedAt: new Date().toISOString(),
   };
+}
+
+function buildMasterScriptQuestions(story: StoredStory, topic: ReturnType<typeof inferStoryTopic>) {
+  return [
+    `What exactly happened in "${cleanTitle(story.title)}", and what is confirmed versus only reported?`,
+    "Why did this issue escalate now, and what older context made it politically sensitive?",
+    "Which people, institutions, parties, courts, ministries, agencies, or constituencies actually control the next step?",
+    "What facts, figures, documents, legal sections, dates, or datasets define the real scale of the issue?",
+    "What is the strongest defence/counter-view, and what evidence would test it fairly?",
+    "What is the strongest criticism, protester, opposition, or public-interest view, and what evidence would test it fairly?",
+    "What should viewers watch next before believing the loudest narrative?",
+    ...topic.researchQuestions.slice(0, 4),
+  ];
+}
+
+function buildMasterScriptOutline(story: StoredStory, topic: ReturnType<typeof inferStoryTopic>) {
+  return [
+    `1. Cold open - name the conflict and why ${story.totalScore}/100 Indian audience score makes it worth attention.`,
+    `2. Questions we will answer - use ${Math.min(7, buildMasterScriptQuestions(story, topic).length)} viewer questions before the story begins.`,
+    "3. What happened - date, place, trigger, actors, response, and source caveat.",
+    "4. Full timeline - start before the headline, move through escalation, and end with next watch item.",
+    "5. Data and documents - show the number, order, law, filing, statement, affidavit, bill text, result, budget line, or dataset that matters.",
+    "6. Actor background - explain named people/institutions and why they have power or incentive here.",
+    "7. Accountability chain - who can inquire, transfer, resign, legislate, enforce, delay, or clarify.",
+    "8. Two strongest sides - defence first, then criticism, both tested against records.",
+    "9. STEPPS packaging - turn truthful research into a memorable civic explainer without overclaiming.",
+    "10. Conclusion - what is proven, what is unproven, who must answer next, and what viewers should watch.",
+    ...topic.storytellingBeats.slice(0, 4),
+  ];
+}
+
+function buildSteppsStrategy(story: StoredStory, topic: ReturnType<typeof inferStoryTopic>) {
+  return [
+    `Social Currency - give viewers a clear evidence-backed explanation they can share without sounding like they only read a headline: ${cleanTitle(story.title)}.`,
+    "Triggers - tie the issue to the next hearing, Parliament action, official response, protest date, election calendar, exam/job concern, or daily public pain point.",
+    "Emotion - use responsible stakes: fairness, accountability, public trust, youth anxiety, institutional credibility, or rights impact; avoid rage without proof.",
+    "Public - identify the visible public behaviour: protest, court hearing, party statement, exam result, bill debate, local election, or viral discussion.",
+    "Practical Value - tell viewers what document, number, source, and question they should check before forwarding any claim.",
+    `Stories - build a spine from "${topic.hook}" to the timeline, power chain, strongest defence, strongest criticism, and final watch item.`,
+  ];
 }
 
 function inferStoryTopic(story: StoredStory) {
@@ -962,30 +1019,50 @@ function buildFallbackHindiScript(
   contextLead: string
 ) {
   const context = contextLead.replace(/\s+/g, " ").slice(0, 420);
+  const questions = buildMasterScriptQuestions(story, topic).slice(0, 8);
+  const outline = buildMasterScriptOutline(story, topic).slice(0, 10);
+  const stepps = buildSteppsStrategy(story, topic);
 
-  return `Hook: Aaj ka mudda hai - ${story.title}
+  return `MASTER SCRIPT DRAFT
 
-Pehla sawaal: yeh sirf ek headline hai, ya politics me koi real signal? Politily is story ko ${story.totalScore}/100 score deta hai, lekin score final truth nahi hota. Final video tabhi banana chahiye jab source trail, primary record, aur local impact teenon line up ho jaayein.
+1. Cold open / thesis
+Aaj ka mudda hai - ${story.title}
 
-Kya hua: available sources ke hisaab se, ${context}
+Pehla sawaal: yeh sirf ek headline hai, ya politics me koi real signal? Politily is story ko ${story.totalScore}/100 score deta hai, lekin score final truth nahi hota. Final video tabhi strong banega jab source trail, primary record, timeline, data aur accountability chain line up ho jaayein.
 
-Why it matters: ${topic.whyItMatters}
+2. Questions this video will answer
+${questions.map((question, index) => `${index + 1}. ${question}`).join("\n")}
 
-History aur context: ${topic.historicalContext}
+3. What happened
+Available sources ke hisaab se, ${context}
 
-Institutional accountability: ${topic.institutionalContext}
+4. Full issue timeline and context
+Yahan se story ko seedha latest headline se nahi, timeline se build karna hai. Pehle yeh samjhenge ki event se pehle kya grievance, policy, court order, election pressure, party framing, ya public anger tha. Phir dekhenge ki kis date par issue public hua, kis institution ne respond kiya, aur kis point par political narrative badla.
+
+Historical context: ${topic.historicalContext}
+
+5. Data and documents
+Is script ka data layer clear hona chahiye: dates, legal sections, court listing, order, notification, ECI record, ministry response, budget/data point, vote margin, arrest/detention count, affected people, ya exact dataset. Agar data missing hai to video me bolna hoga: "yeh abhi verify karna baaki hai" [verify].
+
+6. Key people, background, and institution chain
+${topic.institutionalContext}
 
 Research chain: is mudde me pehle actors ka background check hoga - kaun current role me hai, uska past role kya raha, kis institution ke paas real power hai, aur kaunsa document us power ko prove karta hai. Agar election story hai to past margin, candidate affidavit, turnout aur local issue niklega. Agar protest hai to demand list, permission, police order, detention/injury count aur government response niklega. Agar court ya bill hai to exact order, clause, precedent, committee record aur implementation power niklega.
 
-Evidence line: abhi isse final proof mat maaniye. Pehle primary document, official statement, agency copy, regional reporting, aur named people ka background compare karna hoga. Agar police order, ECI notice, court record, ministry reply, bill clause, budget data, candidate affidavit, ya department order missing hai, to script me clearly bolna hoga ki evidence thin hai.
+7. Power analysis
+${topic.powerAnalysis}
 
-Power question: ${topic.powerAnalysis}
+8. Both sides
+Ek side kahegi ki authority ya party apna legal/political kaam kar rahi hai. Doosri side kahegi ki accountability, public anger, ya misuse of power ka sawaal hai. Creator ka kaam dono framing ko repeat karna nahi, balki document aur data se test karna hai.
 
-Donon side: Ek side kahegi ki authority ya party apna legal/political kaam kar rahi hai. Doosri side kahegi ki accountability, public anger, ya misuse of power ka sawaal hai. Creator ka kaam dono framing ko repeat karna nahi, balki document aur data se test karna hai.
+9. STEPPS strategy for packaging
+${stepps.map((item) => `- ${item}`).join("\n")}
 
-Hard questions: ${topic.researchQuestions.slice(0, 4).join(" ")}
+10. Master script outline
+${outline.map((item) => `- ${item}`).join("\n")}
 
-Aage kya dekhna hai: ${topic.whatHappensNext.join(" ")}
+11. Conclusion
+Ab conclusion simple hai: is story par opinion banane se pehle humein teen cheezein chahiye - source trail, primary record, aur accountability chain. Jo proven hai use fact bolenge. Jo sirf reported hai use reported bolenge. Jo political framing hai use framing bolenge. Agla step yeh watch karna hai: ${topic.whatHappensNext.join(" ")}
 
 CTA: Comment me batayein, is mudde par sabse zaroori sawaal evidence ka hai, politics ka hai, ya public impact ka?`;
 

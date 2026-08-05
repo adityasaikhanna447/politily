@@ -29,7 +29,7 @@ Politily is a zero-budget-first political monitoring desk for one creator.
 3. Deep research
    - Stories above `POLITILY_SCORE_THRESHOLD` are eligible for Gemini.
    - The prompt asks for historical context, geographical context, key people, facts, source confidence, narratives, what happens next, and a creator script.
-   - The creator script target is long-form: normally 2200-3000 words in Roman Hindi/Hinglish, with a thesis, escalation chain, named actor/institution background, data checkpoints, counter-view, unresolved proof, and next-watch ending.
+   - The creator script target is long-form: normally 2500-3400 words in Roman Hindi/Hinglish, with a question bank, thesis, timeline, escalation chain, named actor/institution background, data checkpoints, STEPPS packaging strategy, counter-view, unresolved proof, conclusion, and next-watch ending.
    - The prompt requires an original Politily voice rather than imitation of any living creator.
 
 4. Alerting

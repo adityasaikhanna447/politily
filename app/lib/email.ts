@@ -249,6 +249,9 @@ function buildHtml(story: StoredStory, brief: PolitilyBrief, storyLink: string) 
   const facts = brief.factsAndFigures.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   const dataPoints = (brief.dataPoints ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   const questions = (brief.researchQuestions ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const masterQuestions = (brief.masterScriptQuestions ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const masterOutline = (brief.masterScriptOutline ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const stepps = (brief.steppsStrategy ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   const noVideoUntil = (brief.noVideoUntil ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   const sourcePositions = (brief.sourcePositions ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   const next = brief.whatHappensNext.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
@@ -272,6 +275,9 @@ function buildHtml(story: StoredStory, brief: PolitilyBrief, storyLink: string) 
         <p>${escapeHtml(brief.geographicalContext)}</p>
         <h2>Institutional accountability</h2>
         <p>${escapeHtml(brief.institutionalContext || "Regenerate this brief to get institutional accountability context.")}</p>
+        ${masterQuestions ? `<h2>Questions this video will answer</h2><ul>${masterQuestions}</ul>` : ""}
+        ${masterOutline ? `<h2>Master script outline</h2><ul>${masterOutline}</ul>` : ""}
+        ${stepps ? `<h2>STEPPS strategy</h2><ul>${stepps}</ul>` : ""}
         ${dataPoints ? `<h2>Data points</h2><ul>${dataPoints}</ul>` : ""}
         ${questions ? `<h2>Hard research questions</h2><ul>${questions}</ul>` : ""}
         ${noVideoUntil ? `<h2>No video until</h2><ul>${noVideoUntil}</ul>` : ""}
@@ -280,10 +286,11 @@ function buildHtml(story: StoredStory, brief: PolitilyBrief, storyLink: string) 
         ${sourcePositions ? `<h2>Source positions</h2><ul>${sourcePositions}</ul>` : ""}
         <h2>What happens next</h2>
         <ul>${next}</ul>
-        <h2>Roman Hindi creator script</h2>
+        <h2>Compiled Roman Hindi master script</h2>
         <pre style="white-space:pre-wrap;background:#fffdfa;border:1px solid #d9d3c3;padding:16px;border-radius:8px;">${escapeHtml(
           brief.videoScript
         )}</pre>
+        ${brief.scriptConclusion ? `<h2>Script conclusion</h2><p>${escapeHtml(brief.scriptConclusion)}</p>` : ""}
         <h2>Sources</h2>
         <ul>${sources}</ul>
         <p><a href="${escapeHtml(storyLink)}">Open in Politily</a></p>
@@ -780,6 +787,15 @@ ${brief.institutionalContext || "Regenerate this brief to get institutional acco
 Data points:
 ${(brief.dataPoints ?? []).join("\n")}
 
+Questions this video will answer:
+${(brief.masterScriptQuestions ?? []).join("\n")}
+
+Master script outline:
+${(brief.masterScriptOutline ?? []).join("\n")}
+
+STEPPS strategy:
+${(brief.steppsStrategy ?? []).join("\n")}
+
 Hard research questions:
 ${(brief.researchQuestions ?? []).join("\n")}
 
@@ -789,8 +805,11 @@ ${(brief.noVideoUntil ?? []).join("\n")}
 Source positions:
 ${(brief.sourcePositions ?? []).join("\n")}
 
-Roman Hindi script:
+Compiled Roman Hindi master script:
 ${brief.videoScript}
+
+Script conclusion:
+${brief.scriptConclusion || ""}
 
 Sources:
 ${brief.citedUrls.join("\n")}

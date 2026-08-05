@@ -242,7 +242,7 @@ export function PolitilyDashboard() {
 
   async function generateBrief(storyId: string) {
     setBusy(true);
-    setStatus("Generating deep English brief and Roman Hindi script");
+    setStatus("Generating deep English brief and compiled Roman Hindi master script");
     try {
       const response = await fetch("/api/brief", {
         method: "POST",
@@ -849,7 +849,7 @@ function OverviewDesk({
           <StrategyRow label="Use today" value={`${urgent} stories above reach threshold`} />
           <StrategyRow label="Brief discipline" value="Generate only the strongest 12-15 briefs per day." />
           <StrategyRow label="Verification rule" value="No one-source video. Require primary record or multi-source trail." />
-          <StrategyRow label="Script depth" value="Research in English, 2200-3000 word Roman Hindi/Hinglish creator script." />
+          <StrategyRow label="Script depth" value="Research in English, questions-first STEPPS outline, conclusion, and 2500-3400 word Roman Hindi/Hinglish master script." />
         </div>
       </section>
 
@@ -1278,9 +1278,9 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
   if (!brief) {
     return (
       <section className="panel brief-empty">
-        <PanelTitle title="Deep brief and Roman Hindi script" />
+        <PanelTitle title="Deep brief and compiled master script" />
         <h2>No generated brief yet</h2>
-        <p>Generate a deep issue dossier with English research context, hard questions, data checks, source confidence, and a 2200-3000 word Roman Hindi/Hinglish creator script.</p>
+        <p>Generate a deep issue dossier with English research context, hard questions, data checks, STEPPS strategy, conclusion, and a compiled Roman Hindi/Hinglish master script.</p>
         <button className="btn btn-gold" disabled={busy} onClick={() => onGenerate(story.id)} type="button">
           Generate brief
         </button>
@@ -1301,7 +1301,7 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
         </div>
         <div className="brief-title-row">
           <div>
-            <PanelTitle title="Deep brief and Roman Hindi script" />
+            <PanelTitle title="Deep brief and compiled master script" />
             <h2>{brief.briefTitle}</h2>
             <p>{brief.hook}</p>
           </div>
@@ -1334,6 +1334,9 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
       <TextPanel title="Regional context" text={brief.regionalContext || brief.geographicalContext} />
       <TextPanel title="Institutional accountability" text={brief.institutionalContext || "No institutional accountability context generated yet."} />
       <TextPanel title="Power analysis" text={brief.powerAnalysis || "No power analysis generated yet."} />
+      <ListPanel title="Questions this video will answer" items={brief.masterScriptQuestions ?? []} />
+      <ListPanel title="Master script outline" items={brief.masterScriptOutline ?? []} />
+      <ListPanel title="STEPPS strategy" items={brief.steppsStrategy ?? []} />
       <ListPanel title="Data points and datasets" items={brief.dataPoints ?? []} />
       <ListPanel title="Hard research questions" items={brief.researchQuestions ?? []} />
       <ListPanel title="Accountability map" items={brief.accountabilityMap ?? []} />
@@ -1350,9 +1353,10 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
       <ListPanel title="Claim matrix" items={brief.claimMatrix} />
       <ListPanel title="Verification protocol" items={brief.verificationProtocol} />
       <ListPanel title="What happens next" items={brief.whatHappensNext} />
+      <TextPanel title="Script conclusion" text={brief.scriptConclusion || "No compiled conclusion generated yet."} />
 
       <div className="panel span-2">
-        <PanelTitle title="Roman Hindi creator script" />
+        <PanelTitle title="Compiled Roman Hindi master script" />
         <pre className="script-box">{brief.videoScript}</pre>
       </div>
 

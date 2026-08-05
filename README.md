@@ -9,7 +9,7 @@ It watches open political sources, scores new stories, generates context-rich br
 - Monitors GDELT, official RSS feeds, national/regional portals, ANI/PTI-style agency wires, and social/viral early-signal lanes.
 - Scores stories for novelty, political weight, India/global geopolitical relevance, viral potential, and public mood risk.
 - Stores seen stories and scan history in Cloudflare D1.
-- Uses Gemini to generate historical context, geographical context, facts, narratives, source confidence, and a long-form 2200-3000 word Roman Hindi/Hinglish creator script.
+- Uses Gemini to generate historical context, geographical context, facts, narratives, source confidence, STEPPS strategy, a question-led outline, and a long-form 2500-3400 word Roman Hindi/Hinglish master script.
 - Sends alert emails through Resend.
 - Runs as a Cloudflare Workers app with D1 and scheduled cron.
 

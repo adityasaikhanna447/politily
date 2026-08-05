@@ -155,6 +155,9 @@ export interface PolitilyBrief {
   openQuestions?: string[];
   monitoringQueries?: string[];
   noVideoUntil?: string[];
+  masterScriptQuestions?: string[];
+  masterScriptOutline?: string[];
+  steppsStrategy?: string[];
   storytellingBeats?: string[];
   videoAngles?: string[];
   sourcePositions?: string[];
@@ -166,6 +169,7 @@ export interface PolitilyBrief {
     audienceReach?: string;
   };
   videoScript: string;
+  scriptConclusion?: string;
   cta: string;
   caution: string;
   citedUrls: string[];
