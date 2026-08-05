@@ -2747,3 +2747,10 @@ select:focus-visible {
     flex: 1 1 150px;
   }
 }
+
+/* Removed from the frontend surface: old scan banner and creator-radar hero. */
+.system-note,
+.mobile-news-summary,
+.radar-hero {
+  display: none !important;
+}

@@ -448,13 +448,6 @@ export function PolitilyDashboard() {
           value={query}
         />
         <div className="top-actions">
-          <div className="crawl-chip" title={`${status}. ${freshnessLabel(latestSignalAt)}`}>
-            <span>Last successful scan</span>
-            <strong>{lastSuccessfulRun ? formatDateTime(lastSuccessfulRun.finishedAt || lastSuccessfulRun.startedAt) : "Waiting"}</strong>
-            <small>
-              {status} · {freshnessShortLabel(latestSignalAt)} · next {nextScanLabel(lastSuccessfulRun)}
-            </small>
-          </div>
           <div className="score-chip">
             <strong>{headerIssueCount}</strong>
             <span>Issues</span>
