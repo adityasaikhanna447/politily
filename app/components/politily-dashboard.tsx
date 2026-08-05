@@ -394,6 +394,10 @@ export function PolitilyDashboard() {
   const triggeredCount = enrichedStories.filter((story) => story.totalScore >= (state?.config.threshold ?? 72)).length;
   const briefedCount = enrichedStories.filter((story) => story.brief).length;
   const tokenTotal = sumBriefTokens(enrichedStories);
+  const headerClusters = useMemo(() => buildIssueClusters(enrichedStories, "recent"), [enrichedStories]);
+  const headerIssueCount = headerClusters.length;
+  const headerTopReach = headerClusters.reduce((max, cluster) => Math.max(max, cluster.reachScore), 0);
+  const headerSourceCount = new Set(headerClusters.flatMap((cluster) => cluster.sources)).size || portalNames.length;
 
   const filteredStories = useMemo(() => {
     const cleanedQuery = query.trim().toLowerCase();
@@ -444,13 +448,24 @@ export function PolitilyDashboard() {
           value={query}
         />
         <div className="top-actions">
-          <div className="crawl-chip">
+          <div className="crawl-chip" title={`${status}. ${freshnessLabel(latestSignalAt)}`}>
             <span>Last successful scan</span>
             <strong>{lastSuccessfulRun ? formatDateTime(lastSuccessfulRun.finishedAt || lastSuccessfulRun.startedAt) : "Waiting"}</strong>
+            <small>
+              {status} · {freshnessShortLabel(latestSignalAt)} · next {nextScanLabel(lastSuccessfulRun)}
+            </small>
+          </div>
+          <div className="score-chip">
+            <strong>{headerIssueCount}</strong>
+            <span>Issues</span>
+          </div>
+          <div className="score-chip">
+            <strong>{headerTopReach}</strong>
+            <span>Top reach</span>
           </div>
           <div className="score-chip portal-chip">
-            <strong>{portalNames.length}</strong>
-            <span>Portals since {MIN_VISIBLE_STORY_LABEL}</span>
+            <strong>{headerSourceCount}</strong>
+            <span>Sources</span>
           </div>
           <button className="btn btn-ghost" disabled={busy} onClick={refreshState} type="button">
             Refresh
@@ -498,22 +513,6 @@ export function PolitilyDashboard() {
       </aside>
 
       <section className="orm-main">
-        <div className="system-note">
-          <span>{status}. Scan every 5 min. Next approx {nextScanLabel(lastSuccessfulRun)}.</span>
-          <strong>
-            {freshnessLabel(latestSignalAt)}. {portalNames.length} portals cited. D1 tables: 4 normal tables.
-          </strong>
-        </div>
-
-        <div className="mobile-news-summary">
-          <span>Since {MIN_VISIBLE_STORY_LABEL}</span>
-          <strong>{enrichedStories.length} signals</strong>
-          <strong>{freshnessShortLabel(latestSignalAt)}</strong>
-          <strong>Next {nextScanLabel(lastSuccessfulRun)}</strong>
-          <strong>{portalNames.length} portals</strong>
-          <strong>{formatTokens(tokenTotal)} tokens</strong>
-        </div>
-
         {view === "overview" ? (
           <section className="kpi-grid">
             <Kpi tone="gold" label="Signals" value={enrichedStories.length} sub="stored stories" />
@@ -937,34 +936,10 @@ function WatchDesk({
   const selectedCluster = selectedStory
     ? clusters.find((cluster) => cluster.stories.some((story) => story.id === selectedStory.id))
     : clusters[0];
-  const topScore = clusters[0]?.reachScore ?? 0;
-  const visibleSources = new Set(clusters.flatMap((cluster) => cluster.sources)).size;
   const researchQuery = query.trim();
 
   return (
     <>
-      <section className="radar-hero">
-        <div>
-          <span className="section-chip">Creator radar</span>
-          <h1>Today's political issues</h1>
-          <p>Grouped by topic and source trail, so one issue does not become ten repeated newspaper cards.</p>
-        </div>
-        <div className="radar-stats">
-          <span>
-            <strong>{clusters.length}</strong>
-            <small>Issues</small>
-          </span>
-          <span>
-            <strong>{topScore}</strong>
-            <small>Top reach</small>
-          </span>
-          <span>
-            <strong>{visibleSources}</strong>
-            <small>Sources</small>
-          </span>
-        </div>
-      </section>
-
       <div className="watch-grid">
         <section className="panel feed-panel">
           <div className="feed-tools">

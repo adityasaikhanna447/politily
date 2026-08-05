@@ -170,6 +170,18 @@ a {
   white-space: nowrap;
 }
 
+.crawl-chip small {
+  color: var(--faint);
+  display: block;
+  font-size: 9px;
+  font-weight: 800;
+  margin-top: 2px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .score-chip {
   text-align: center;
 }
@@ -1823,7 +1835,7 @@ select:focus-visible {
 
   .top-actions {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
   .top-search,
@@ -1833,10 +1845,34 @@ select:focus-visible {
 
   .crawl-chip,
   .score-chip {
-    display: none;
+    display: block;
+    min-width: 0;
+    padding: 7px 8px;
+  }
+
+  .crawl-chip {
+    grid-column: 1 / -1;
+  }
+
+  .score-chip {
+    grid-column: span 2;
+  }
+
+  .score-chip strong {
+    font-size: 18px;
+  }
+
+  .score-chip span {
+    font-size: 9px;
+  }
+
+  .crawl-chip strong,
+  .crawl-chip small {
+    max-width: none;
   }
 
   .top-actions .btn {
+    grid-column: span 3;
     width: 100%;
   }
 
