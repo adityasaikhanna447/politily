@@ -193,6 +193,12 @@ Research editor rules:
 14. Make the research chain deep for every topic, not only resignations or minister accountability. For any issue, build actor background, institution chain, regional history, data trail, primary proof, narrative incentives, counter-view, and creator risk.
 15. If a person's name appears, explain their current role, relevant past role, political/institutional background, incentive, prior controversy/reform link if relevant, and why their name matters to this exact issue.
 16. If a department, ministry, police force, court, party, university, election body, regulator, or agency appears, explain its formal power, chain of command, practical limits, previous record, and what document proves action or inaction.
+17. Script depth benchmark: target a serious 12-18 minute creator script, normally 2200-3000 words in Roman Hindi/Hinglish. The attached benchmark style is long-form political narration: a hard thesis in the first line, then why this event matters, why now, what failed before, named actor/institution background, a numbered escalation chain, data checks, strongest defence, strongest criticism, and an ending that tells viewers what remains pending.
+18. The script must feel like a researched narrative, not a list. Build momentum through "pehle kya hua", "phir kya badla", "sarkar/party/institution ne kya try kiya", "kis point par narrative palta", "kaun beneficiary hai", and "ab kya watch karna hai".
+19. Do not overclaim. If the source trail cannot support a strong allegation, the script must say "yeh abhi prove nahi hai" and move it to a verification beat instead of presenting it as fact.
+20. Add inline source markers in the videoScript for major factual claims using [S1], [S2], [S3] style, matching the source order in sourcePositions/citedUrls. Use [verify] when the claim needs a missing primary record.
+21. Facts and figures are mandatory. Do not leave factsAndFigures, dataPoints, accountabilityMap, claimMatrix, or primaryDocuments thin. If exact data is missing, write the exact dataset/document to pull, who controls it, and why it can change the conclusion.
+22. Every research report must answer: what number proves scale, what document proves authority, what timeline proves escalation, what actor background explains incentive, and what counter-evidence would weaken the story.
 
 Deep research chain to apply to every issue type:
 - Election/bypoll: constituency history, past margins, candidate background, caste/class/local blocs, alliances, turnout, affidavits, ECI schedule, local issues, and why the seat matters beyond the headline.
@@ -253,7 +259,7 @@ Return only valid JSON with this exact shape:
   "historicalContext": "260-440 words. Specific background, previous events, relevant law/policy/election history, institutional memory, key actor background, and parallels. If unknown, name the exact missing record.",
   "geographicalContext": "places, institutions, regions, constituencies, or international context",
   "keyPeople": ["person or institution - current role/background - why they matter here - what must be verified"],
-  "factsAndFigures": ["8-14 verifiable facts or numbers; if unavailable, name the exact dataset/document needed and why it matters"],
+  "factsAndFigures": ["14-24 verifiable facts, dates, legal sections, institutional powers, vote/budget/arrest/affected-person numbers, actor background facts, or exact datasets/documents needed with why each matters"],
   "sourceConfidence": "how reliable the available source base is",
   "evidenceGrade": "primary-backed | multi-source | reported | disputed | thin",
   "timeline": ["8-12 entries when possible: date or period - event - source/caveat"],
@@ -267,7 +273,7 @@ Return only valid JSON with this exact shape:
   "audienceReachScore": 0,
   "audienceReachReason": "why Indian audience may or may not care",
   "researchDepthScore": 0,
-  "dataPoints": ["specific data point, statistic, historical number, date, law section, constituency figure, arrest/count/case detail, actor background fact, previous-office detail, or exact dataset to pull"],
+  "dataPoints": ["12-20 specific data points: statistic, historical number, date, law section, constituency figure, arrest/count/case detail, actor background fact, previous-office detail, committee/bill/court record, or exact dataset to pull"],
   "researchQuestions": ["hard question a serious researcher should ask before scripting, covering actor background, institution chain, data trail, local context, and narrative incentive"],
   "institutionalContext": "who has formal power, who has political responsibility, what the accountability/decision chain is, what action is realistically possible, and what document proves it",
   "accountabilityMap": ["actor/institution - current role/background - formal power - political incentive/accountability - evidence needed"],
@@ -287,7 +293,7 @@ Return only valid JSON with this exact shape:
     "viralPotential": "why it can or cannot travel online",
     "audienceReach": "why this reaches Indian viewers"
   },
-  "videoScript": "1100-1700 words in Roman Hindi/Hinglish, not Devanagari. Structure: cold open, exact event, why now, actor background, institutional/decision chain, chronology, historical/regional background, data, strongest government/defence view, strongest critic/protester/opposition view, what is unverified, why it matters for Indian viewers, what happens next, CTA. Sound like a serious creator research script, not a school assignment.",
+  "videoScript": "2200-3000 words in Roman Hindi/Hinglish, not Devanagari. Structure: hard thesis/cold open, exact event, why now, actor background, institutional/decision chain, chronology, historical/regional background, data checkpoints, numbered escalation chain if useful, strongest government/defence view, strongest critic/protester/opposition view, what is unverified, why it matters for Indian viewers, what happens next, CTA. Use inline source markers like [S1], [S2], [verify] for factual claims. Sound like a serious original political creator research script, not a school assignment or generic summary.",
   "cta": "short Roman Hindi/Hinglish call to action",
   "caution": "what not to overclaim",
   "citedUrls": ["url"]
@@ -318,11 +324,11 @@ function parseBrief(text?: string): Omit<PolitilyBrief, "generatedBy" | "generat
 function geminiAttempts(primaryModel: string): GeminiAttempt[] {
   const models = uniqueStrings([primaryModel, "gemini-3.5-flash", "gemini-3.1-flash-lite"]);
   const attempts: GeminiAttempt[] = [
+    { model: models[0], maxOutputTokens: 12288 },
     { model: models[0], maxOutputTokens: 8192 },
-    { model: models[0], maxOutputTokens: 6144 },
   ];
   if (models[1]) {
-    attempts.push({ model: models[1], maxOutputTokens: 6144 });
+    attempts.push({ model: models[1], maxOutputTokens: 8192 });
   }
   if (models[2]) {
     attempts.push({ model: models[2], maxOutputTokens: 4096 });
@@ -411,7 +417,7 @@ function inferIssueFrame(story: StoredStory, sourceLinks: StorySourceLink[]) {
 async function fetchSourceContexts(story: StoredStory, sourceLinks: StorySourceLink[]) {
   const targets = uniqueStrings([story.url, ...sourceLinks.map((link) => link.url)])
     .filter(Boolean)
-    .slice(0, 7);
+    .slice(0, 10);
   const sourceNameByUrl = new Map<string, string>();
   sourceNameByUrl.set(story.url, story.sourceName);
   sourceLinks.forEach((link) => sourceNameByUrl.set(link.url, link.sourceName));
@@ -1027,7 +1033,7 @@ function decodeEntities(value: string) {
 
 function normaliseList(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value.map(String).filter(Boolean).slice(0, 20);
+    return value.map(String).filter(Boolean).slice(0, 30);
   }
 
   if (typeof value === "string" && value.trim()) {

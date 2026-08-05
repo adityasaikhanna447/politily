@@ -60,6 +60,106 @@ export const DEFAULT_SOURCES: SignalSource[] = [
     active: true,
   },
   {
+    id: "rss-ani-national-politics",
+    name: "ANI National Politics",
+    type: "rss",
+    url: "https://aninews.in/rss/feed/category/national/politics.xml",
+    region: "india",
+    category: "Freshness / agency wire ANI",
+    biasLean: "right",
+    verificationMethod:
+      "ANI agency wire lane: use for speed and perspective tracking; count ANI and portal reposts as one origin until verified by primary records or non-wire reporting.",
+    language: "English",
+    sourceLane: "agency",
+    priority: 134,
+    active: true,
+  },
+  {
+    id: "google-news-ani-wire-backup",
+    name: "ANI Wire Watch Backup",
+    type: "rss",
+    url: googleNewsRss(
+      'site:aninews.in India politics parliament election protest court BJP Congress minister government when:1d'
+    ),
+    region: "india",
+    category: "Freshness / agency wire ANI backup",
+    biasLean: "right",
+    verificationMethod:
+      "ANI backup lane through Google News: useful when direct RSS is delayed; treat as agency-origin signal, not independent corroboration.",
+    language: "English",
+    sourceLane: "agency",
+    priority: 133,
+    active: true,
+  },
+  {
+    id: "html-ani-national-politics",
+    name: "ANI Politics Direct Page",
+    type: "html",
+    url: "https://aninews.in/category/national/politics/",
+    region: "india",
+    category: "Freshness / agency wire ANI direct page",
+    biasLean: "right",
+    verificationMethod:
+      "ANI direct page lane: fastest agency-origin signal. Treat ANI as one wire origin until corroborated by primary records, parliamentary documents, or independent reporting.",
+    language: "English",
+    sourceLane: "agency",
+    priority: 136,
+    active: true,
+  },
+  {
+    id: "google-news-ani-parliament-watch",
+    name: "ANI Parliament Wire Watch",
+    type: "rss",
+    url: googleNewsRss(
+      'site:aninews.in (Parliament OR "Lok Sabha" OR "Rajya Sabha" OR "Parliamentary Affairs" OR Speaker OR bill OR ordinance OR "monsoon session" OR "winter session") when:1d'
+    ),
+    region: "india",
+    category: "Freshness / ANI parliament wire",
+    biasLean: "right",
+    verificationMethod:
+      "ANI Parliament lane: watch for fast parliamentary affairs copy; verify against Lok Sabha/Rajya Sabha records, bill text, PRS/official bulletins, and minister statements.",
+    language: "English",
+    sourceLane: "agency",
+    priority: 135,
+    active: true,
+  },
+  {
+    id: "google-news-ani-exclusive-politics",
+    name: "ANI Exclusive Politics Watch",
+    type: "rss",
+    url: googleNewsRss(
+      'site:aninews.in ("Exclusive" OR "ANI Exclusive" OR interview OR "sources said" OR "told ANI") (politics OR government OR parliament OR election OR BJP OR Congress OR opposition OR minister) when:1d'
+    ),
+    region: "india",
+    category: "Freshness / ANI exclusive watch",
+    biasLean: "right",
+    verificationMethod:
+      "ANI exclusive lane: useful for early narrative intelligence; label claims carefully and verify documents, direct quotes, and non-wire corroboration before scripting.",
+    language: "English",
+    sourceLane: "agency",
+    priority: 135,
+    active: true,
+  },
+  {
+    id: "gdelt-ani-parliament-exclusive",
+    name: "ANI Parliament + Exclusive GDELT",
+    type: "gdelt",
+    url: gdeltUrl(
+      'site:aninews.in ANI India (Parliament OR "Lok Sabha" OR "Rajya Sabha" OR Exclusive OR "told ANI" OR minister OR bill OR opposition)',
+      12,
+      "1d"
+    ),
+    region: "india",
+    category: "Freshness / ANI GDELT triangulation",
+    biasLean: "right",
+    verificationMethod:
+      "ANI GDELT lane: backup for fast agency signals when RSS/category pages lag; do not count syndicated ANI repeats as independent verification.",
+    language: "English",
+    sourceLane: "agency",
+    priority: 132,
+    active: true,
+  },
+  {
     id: "fresh-google-hindi-politics-24h",
     name: "Hindi Political Signals 24h",
     type: "rss",

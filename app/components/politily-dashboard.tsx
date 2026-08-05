@@ -9,6 +9,7 @@ import {
   issueSimilarity as sharedIssueSimilarity,
   issueTokens as sharedIssueTokens,
 } from "../lib/issues";
+import { buildWireOriginReport } from "../lib/wire-origin";
 
 type View = "overview" | "watch" | "brief" | "sources" | "setup";
 type SortKey = "rank" | "recent" | "oldest" | "viral" | "political" | "source";
@@ -29,10 +30,12 @@ interface EnrichedStory extends StoredStory {
   reachReason: string;
   sourceNames: string[];
   sourceDiversity: number;
+  independentSourceCount: number;
   sourcePriority: number | null;
   videoAngle: string;
   verificationState: string;
   verificationMethod: string;
+  wireOrigin: string;
   biasSummary: string;
   sourceLaneSummary: string;
   scoringBreakdownLines: string[];
@@ -723,6 +726,8 @@ function IssueDetailPage({
           <ResearchTile label="Video angle" value={story.videoAngle} />
           <ResearchTile label="Verification state" value={story.verificationState} />
           <ResearchTile label="Verification method" value={story.verificationMethod} />
+          <ResearchTile label="Wire origin" value={story.wireOrigin} />
+          <ResearchTile label="Independent sources" value={`${story.independentSourceCount} non-wire visible source(s)`} />
           <ResearchTile label="Source lanes" value={story.sourceLaneSummary} />
           <ResearchTile label="Credibility bias" value={story.biasSummary} />
           <ResearchTile label="Sentiment / backlash" value={story.sentimentLabel} />
@@ -844,7 +849,7 @@ function OverviewDesk({
           <StrategyRow label="Use today" value={`${urgent} stories above reach threshold`} />
           <StrategyRow label="Brief discipline" value="Generate only the strongest 12-15 briefs per day." />
           <StrategyRow label="Verification rule" value="No one-source video. Require primary record or multi-source trail." />
-          <StrategyRow label="Script language" value="Research in English, creator script in Roman Hindi/Hinglish." />
+          <StrategyRow label="Script depth" value="Research in English, 2200-3000 word Roman Hindi/Hinglish creator script." />
         </div>
       </section>
 
@@ -1243,6 +1248,8 @@ function StoryDossier({
         <ResearchTile label="Video angle" value={story.videoAngle} />
         <ResearchTile label="Verification state" value={story.verificationState} />
         <ResearchTile label="Verification method" value={story.verificationMethod} />
+        <ResearchTile label="Wire origin" value={story.wireOrigin} />
+        <ResearchTile label="Independent sources" value={`${story.independentSourceCount} non-wire visible source(s)`} />
         <ResearchTile label="Credibility bias" value={story.biasSummary} />
         <ResearchTile label="Source lanes" value={story.sourceLaneSummary} />
         <ResearchTile label="Sentiment / backlash" value={story.sentimentLabel} />
@@ -1273,7 +1280,7 @@ function BriefDesk({ story, busy, onGenerate }: { story: EnrichedStory; busy: bo
       <section className="panel brief-empty">
         <PanelTitle title="Deep brief and Roman Hindi script" />
         <h2>No generated brief yet</h2>
-        <p>Generate a deep issue dossier with English research context, hard questions, data checks, source confidence, and a Roman Hindi creator script.</p>
+        <p>Generate a deep issue dossier with English research context, hard questions, data checks, source confidence, and a 2200-3000 word Roman Hindi/Hinglish creator script.</p>
         <button className="btn btn-gold" disabled={busy} onClick={() => onGenerate(story.id)} type="button">
           Generate brief
         </button>
@@ -1447,7 +1454,7 @@ function SetupDesk({
           <StrategyRow label="Token policy" value={`Scanning uses RSS/GDELT/open pages: 0 Gemini tokens. Generated briefs recorded so far: ${formatTokens(tokenTotal)} tokens.`} />
           <StrategyRow label="Email" value={state.config.emailReady ? "Ready." : "Pending. Resend domain/API still needed."} />
           <StrategyRow label="Auto alerts" value={`Fast signal emails at ${state.config.alertThreshold}/100. Deep brief trigger remains ${state.config.threshold}/100.`} />
-          <StrategyRow label="Cron" value="Use */5 * * * * for early access. Cloudflare UI shows UTC, app shows IST." />
+          <StrategyRow label="Cron" value="Use */2 * * * * for early scans plus 30 9,15 * * * for 3 PM and 9 PM IST media reports. Cloudflare UI shows UTC, app shows IST." />
         </div>
       </div>
       <div className="panel">
@@ -1586,11 +1593,22 @@ function enrichStory(story: StoredStory, sources: SignalSource[]): EnrichedStory
     matchingSource?.sourceLane ?? inferLaneFromSource(matchingSource, displayStory.sourceName),
     ...sourceLinks.map((link) => link.sourceLane ?? inferLaneFromSource(undefined, link.sourceName)),
   ]);
-  const verificationMethod =
+  const wireOriginReport = buildWireOriginReport({
+    title: displayStory.title,
+    summary: displayStory.summary,
+    url: displayStory.url,
+    sourceName: displayStory.sourceName,
+    verificationMethod: story.verificationMethod,
+    sourceLinks,
+  });
+  const baseVerificationMethod =
     story.verificationMethod ||
     sourceLinks.find((link) => link.verificationMethod)?.verificationMethod ||
     matchingSource?.verificationMethod ||
-    verificationMethodForDashboard(story, sourceNames.length);
+    verificationMethodForDashboard(story, wireOriginReport.independentSourceCount || sourceNames.length);
+  const verificationMethod = wireOriginReport.agency
+    ? `${wireOriginReport.verificationWarning} ${baseVerificationMethod}`
+    : baseVerificationMethod;
   const reachScore = story.brief?.audienceReachScore ?? clamp(Math.round(story.totalScore * 0.72 + story.viralPotential * 0.18 + story.politicalWeight * 0.1));
   const newsSnippet = cleanSummary(displayStory.articleExcerpt || displayStory.summary, displayStory, 175);
 
@@ -1604,10 +1622,12 @@ function enrichStory(story: StoredStory, sources: SignalSource[]): EnrichedStory
     reachReason: story.brief?.audienceReachReason || reachReason(story, reachScore),
     sourceNames,
     sourceDiversity: sourceNames.length,
+    independentSourceCount: wireOriginReport.independentSourceCount,
     sourcePriority: matchingSource?.priority ?? null,
     videoAngle: story.brief?.videoAngles?.[0] || videoAngleFor(story, topics),
-    verificationState: verificationState(story, sourceNames.length),
+    verificationState: verificationState(story, wireOriginReport.independentSourceCount || sourceNames.length),
     verificationMethod,
+    wireOrigin: wireOriginReport.label,
     biasSummary: sourceBiases.length ? sourceBiases.map(formatBiasLabel).join(", ") : "Bias: unknown",
     sourceLaneSummary: sourceLanes.length ? sourceLanes.map(formatSourceLaneLabel).join(", ") : "Lane: portal",
     scoringBreakdownLines: buildScoringBreakdownLines(story, sourceNames.length),
@@ -1931,6 +1951,7 @@ function storySearchText(story: EnrichedStory) {
     story.sourceNames.join(" "),
     story.biasSummary,
     story.sourceLaneSummary,
+    story.wireOrigin,
     story.verificationMethod,
     story.verificationState,
     story.sentimentLabel,

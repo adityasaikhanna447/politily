@@ -10,17 +10,20 @@ const localBindingConfig = {
   compatibility_flags: ["nodejs_compat"],
   vars: {
     APP_BASE_URL: "https://politily.adityakhanna-tcc.workers.dev",
+    ALERT_EMAIL: "adityakhanna.tcc@gmail.com",
+    ALERT_FROM_EMAIL: "alerts@alerts.shirdisairasoi.org",
+    GEMINI_MODEL: "gemini-3.5-flash",
     POLITILY_SCORE_THRESHOLD: "72",
     POLITILY_ALERT_MIN_SCORE: "85",
     POLITILY_MAX_DEEP_BRIEFS_PER_RUN: "0",
-    POLITILY_MAX_EMAIL_ALERTS_PER_RUN: "3",
-    POLITILY_MAX_SOURCES_PER_RUN: "18",
-    POLITILY_FETCH_TIMEOUT_MS: "6500",
+    POLITILY_MAX_EMAIL_ALERTS_PER_RUN: "4",
+    POLITILY_MAX_SOURCES_PER_RUN: "32",
+    POLITILY_FETCH_TIMEOUT_MS: "5000",
     POLITILY_MIN_STORY_DATE: "2026-07-20T00:00:00+05:30",
-    POLITILY_MAX_MEDIA_FETCHES_PER_RUN: "6",
+    POLITILY_MAX_MEDIA_FETCHES_PER_RUN: "10",
   },
   triggers: {
-    crons: ["*/5 * * * *", "30 8,15 * * *"],
+    crons: ["*/2 * * * *", "30 9,15 * * *"],
   },
   d1_databases: [
     {

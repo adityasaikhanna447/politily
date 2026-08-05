@@ -20,7 +20,7 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as DigestRequest;
     const window = digestWindow(body);
-    const stories = await listStoriesInDateRange(runtimeEnv.DB, window.startIso, window.endIso, 80);
+    const stories = await listStoriesInDateRange(runtimeEnv.DB, window.startIso, window.endIso, 180);
     const result = await sendStrategicDigestEmail(runtimeEnv, stories, {
       startIso: window.startIso,
       endIso: window.endIso,

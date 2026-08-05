@@ -5,6 +5,7 @@ import {
   canonicalIssueLabel,
   issueSimilarity,
 } from "./issues";
+import { buildWireOriginReport, linkWireOriginLabel } from "./wire-origin";
 
 interface DigestOptions {
   startIso: string;
@@ -23,6 +24,7 @@ interface DigestIssue {
 }
 
 const DEFAULT_APP_BASE_URL = "https://politily.adityakhanna-tcc.workers.dev/";
+const MAX_DIGEST_ISSUES = 50;
 
 export async function sendBriefEmail(
   env: RuntimeEnv,
@@ -153,7 +155,7 @@ export async function sendStrategicDigestEmail(
     };
   }
 
-  const issues = buildDigestIssues(stories).slice(0, 15);
+  const issues = buildDigestIssues(stories).slice(0, MAX_DIGEST_ISSUES);
   const sourceCount = new Set(issues.flatMap((issue) => issue.sources)).size;
   const topScore = issues[0]?.score ?? 0;
   const appLink = appBaseUrl(env);
@@ -191,6 +193,7 @@ export async function sendStrategicDigestEmail(
 }
 
 function buildSignalHtml(story: StoredStory, storyLink: string, briefLink: string, sources: string[]) {
+  const wireReport = buildWireOriginReport(story);
   const links = (story.sourceLinks ?? [])
     .slice(0, 8)
     .map((link) => `<li><a href="${escapeHtml(link.url)}" style="color:#8dbdff;">${escapeHtml(cleanEmailText(link.sourceName))}</a> - ${escapeHtml(cleanEmailText(link.title))}</li>`)
@@ -210,6 +213,7 @@ function buildSignalHtml(story: StoredStory, storyLink: string, briefLink: strin
           ${digestStat("Sources", String(Math.max(1, sources.length)))}
         </div>
         <p style="border-left:3px solid #3b9cff;padding-left:12px;color:#f2eee6;line-height:1.55;margin:0 0 14px;"><strong>Why this email:</strong> This crossed the instant ${escapeHtml(String(story.totalScore))}/100 signal rule or strengthened a watched issue. It is worth opening the issue page before recording.</p>
+        <p style="border-left:3px solid #ef4444;padding-left:12px;color:#f2eee6;line-height:1.55;margin:0 0 14px;"><strong>Wire origin:</strong> ${escapeHtml(wireReport.label)}</p>
         <p style="border-left:3px solid #d6cec2;padding-left:12px;color:#f2eee6;line-height:1.55;margin:0 0 14px;"><strong>Creator next step:</strong> Open the issue page, inspect the source trail, then generate the deep brief only if the evidence is strong enough.</p>
         <p style="color:#b7bdbe;line-height:1.55;margin:0 0 8px;"><strong>Source mix:</strong> ${escapeHtml(sources.join(", ") || story.sourceName)}</p>
         ${links ? `<ul style="color:#b7bdbe;line-height:1.55;margin:8px 0 14px;padding-left:18px;">${links}</ul>` : ""}
@@ -223,6 +227,7 @@ function buildSignalHtml(story: StoredStory, storyLink: string, briefLink: strin
 }
 
 function buildSignalText(story: StoredStory, storyLink: string, briefLink: string, sources: string[]) {
+  const wireReport = buildWireOriginReport(story);
   return `Politily fast signal
 
 ${cleanEmailText(story.title)}
@@ -231,6 +236,7 @@ Score: ${story.totalScore}/100
 Viral: ${story.viralPotential}/100
 Political: ${story.politicalWeight}/100
 Sources: ${sources.join(", ") || story.sourceName}
+Wire origin: ${wireReport.label}
 
 What happened:
 ${issueBioForEmail(story, sources)}
@@ -293,6 +299,9 @@ function buildDigestHtml(
   sourceCount: number,
   appLink: string
 ) {
+  const urgentCount = issues.filter((issue) => issue.score >= 85).length;
+  const agencyCount = issues.filter(hasAgencySource).length;
+  const parliamentCount = issues.filter((issue) => topicForStory(issue.lead) === "Parliament").length;
   const issueHtml = issues.length
     ? buildDigestTableHtml(issues, appLink)
     : `<section style="border:1px solid #263135;border-radius:12px;padding:18px;background:#0f1517;">
@@ -306,11 +315,13 @@ function buildDigestHtml(
       <main style="max-width:760px;margin:0 auto;padding:28px;">
         <p style="letter-spacing:.14em;text-transform:uppercase;color:#8fa0a8;font-size:12px;margin:0 0 8px;">Politily newsroom digest</p>
         <h1 style="font-size:28px;line-height:1.15;margin:0 0 12px;">${escapeHtml(options.label)}</h1>
-        <p style="color:#c7ccca;line-height:1.6;margin:0 0 20px;">Two scheduled reports only: midday and end-of-day. This table uses stored open-source signals and spends 0 Gemini tokens; generate a deep brief only for stories you want to script.</p>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 20px;">
+        <p style="color:#c7ccca;line-height:1.6;margin:0 0 20px;">Grouped media report for creator decisions. It uses stored open-source signals and spends 0 Gemini tokens; generate a deep brief only for issues you may script.</p>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:0 0 20px;">
           ${digestStat("Issues", String(issues.length))}
           ${digestStat("Reports", String(stories.length))}
           ${digestStat("Sources", String(sourceCount))}
+          ${digestStat("Urgent", String(urgentCount))}
+          ${digestStat("Agency/Parl.", `${agencyCount}/${parliamentCount}`)}
         </div>
         ${issueHtml}
         <p style="margin:24px 0 0;"><a href="${escapeHtml(appLink)}" style="color:#8dbdff;">Open Politily dashboard</a></p>
@@ -359,6 +370,7 @@ function buildDigestIssueRowHtml(issue: DigestIssue, rank: number, appLink: stri
   const lead = issue.lead;
   const storyLink = `${appLink.replace(/\/$/, "")}/?story=${encodeURIComponent(lead.id)}&view=issue`;
   const briefLink = `${appLink.replace(/\/$/, "")}/?story=${encodeURIComponent(lead.id)}&view=brief`;
+  const facts = factsForEmail(issue);
   const sourceLinks = sourceLinksForEmail(issue);
   const sourceHtml = sourceLinks.length
     ? sourceLinks
@@ -389,6 +401,7 @@ function buildDigestIssueRowHtml(issue: DigestIssue, rank: number, appLink: stri
     <td valign="top" style="padding:14px 10px;border-bottom:1px solid #263135;width:31%;">
       <p style="color:#d9dddc;line-height:1.5;margin:0 0 8px;">${escapeHtml(issueBioForEmail(lead, issue.sources))}</p>
       <p style="color:#d6cec2;line-height:1.45;margin:0;"><strong>Creator angle:</strong> ${escapeHtml(truncateEmail(videoAngleForEmail(lead), 180))}</p>
+      ${facts ? `<p style="color:#c7ccca;line-height:1.45;margin:8px 0 0;"><strong>Facts/data lead:</strong> ${escapeHtml(facts)}</p>` : ""}
       <p style="color:#b7bdbe;line-height:1.45;margin:8px 0 0;"><strong>Verification:</strong> ${escapeHtml(truncateEmail(verificationForEmail(issue), 160))}</p>
     </td>
     <td valign="top" style="padding:14px 10px;border-bottom:1px solid #263135;width:26%;">
@@ -441,6 +454,8 @@ function buildDigestText(
     `Issues: ${issues.length}`,
     `Reports: ${stories.length}`,
     `Sources: ${sourceCount}`,
+    `Urgent >=85: ${issues.filter((issue) => issue.score >= 85).length}`,
+    `Agency-backed issues: ${issues.filter(hasAgencySource).length}`,
     "",
     "This digest uses stored open-source signals only. Gemini tokens are used only when you generate a deep brief.",
     "",
@@ -461,6 +476,7 @@ function buildDigestText(
         `Score: ${issue.score}/100 | Sources: ${issue.sources.length} | Reports: ${issue.stories.length}`,
         `Issue bio: ${issueBioForEmail(lead, issue.sources)}`,
         `Creator angle: ${videoAngleForEmail(lead)}`,
+        `Facts/data lead: ${factsForEmail(issue) || "Generate/open brief for facts and figures."}`,
         `Verification: ${verificationForEmail(issue)}`,
         `Source mix: ${issue.sources.join(", ") || lead.sourceName}`,
         ...sourceLinksForEmail(issue).slice(0, 5).map((link) => `- ${link.sourceName}: ${link.title} [${sourceMetaForEmail(link)}] (${link.url})`),
@@ -586,6 +602,26 @@ function sourceLinksForEmail(issue: DigestIssue) {
       ];
 }
 
+function hasAgencySource(issue: DigestIssue) {
+  const sourceText = `${issue.lead.sourceName} ${issue.sourceLinks
+    .map((link) => `${link.sourceName} ${link.sourceLane ?? ""} ${link.verificationMethod ?? ""}`)
+    .join(" ")}`.toLowerCase();
+  return /ani|pti|uni|reuters|associated press|agency|wire/.test(sourceText);
+}
+
+function factsForEmail(issue: DigestIssue) {
+  const values = uniqueEmailStrings([
+    ...(issue.lead.brief?.factsAndFigures ?? []),
+    ...(issue.lead.brief?.dataPoints ?? []),
+    ...issue.stories.map((story) => story.articleExcerpt || story.summary || ""),
+  ]).filter((value) => value.length > 24 && !/^politily .*score:/i.test(value) && !/^known source trail:/i.test(value));
+
+  return values
+    .slice(0, 3)
+    .map((value) => truncateEmail(value, 140))
+    .join(" | ");
+}
+
 function issueDateValue(issue?: DigestIssue) {
   if (!issue) return 0;
   return issue.stories.reduce((max, story) => {
@@ -673,17 +709,27 @@ function videoAngleForEmail(story: StoredStory) {
 }
 
 function verificationForEmail(issue: DigestIssue) {
-  if (issue.lead.brief?.sourceConfidence) return issue.lead.brief.sourceConfidence;
-  if (issue.sources.length >= 4) return "Useful multi-source signal. Still verify primary documents before final script.";
-  if (issue.sources.length >= 2) return "Early two-source trail. Generate a deep brief before publishing.";
-  return "Thin source trail. Treat this as a lead, not as a confirmed creator script.";
+  const wireReport = buildWireOriginReport({
+    title: issue.lead.title,
+    summary: issue.lead.summary,
+    url: issue.lead.url,
+    sourceName: issue.lead.sourceName,
+    verificationMethod: issue.lead.verificationMethod,
+    sourceLinks: issue.sourceLinks,
+  });
+  const wirePrefix = wireReport.agency ? `${wireReport.verificationWarning} ` : "";
+  if (issue.lead.brief?.sourceConfidence) return `${wirePrefix}${issue.lead.brief.sourceConfidence}`;
+  if (issue.sources.length >= 4) return `${wirePrefix}Useful multi-source signal. Still verify primary documents before final script.`;
+  if (issue.sources.length >= 2) return `${wirePrefix}Early two-source trail. Generate a deep brief before publishing.`;
+  return `${wirePrefix}Thin source trail. Treat this as a lead, not as a confirmed creator script.`;
 }
 
 function sourceMetaForEmail(link: StorySourceLink) {
   const lane = link.sourceLane ? `lane ${link.sourceLane}` : "lane portal";
   const bias = link.biasLean ? `bias ${link.biasLean}` : "bias unknown";
   const method = link.verificationMethod ? truncateEmail(link.verificationMethod, 90) : "corroborate before scripting";
-  return `${lane} | ${bias} | ${method}`;
+  const wire = linkWireOriginLabel(link);
+  return [lane, bias, wire, method].filter(Boolean).join(" | ");
 }
 
 function tokenizeIssue(value: string) {

@@ -72,13 +72,13 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
     const threshold = numberEnv(env.POLITILY_SCORE_THRESHOLD, 72);
     const alertThreshold = numberEnv(env.POLITILY_ALERT_MIN_SCORE, 85);
     const maxBriefs = numberEnv(env.POLITILY_MAX_DEEP_BRIEFS_PER_RUN, 0);
-    const maxEmailAlerts = Math.min(numberEnv(env.POLITILY_MAX_EMAIL_ALERTS_PER_RUN, 5), 12);
-    const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 18), 24);
-    const fetchTimeoutMs = Math.min(numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 6500), 10000);
+    const maxEmailAlerts = Math.min(numberEnv(env.POLITILY_MAX_EMAIL_ALERTS_PER_RUN, 4), 12);
+    const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 32), 40);
+    const fetchTimeoutMs = Math.min(numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 5000), 8000);
     const minStoryDate = minStoryDateEnv(env.POLITILY_MIN_STORY_DATE);
-    const maxMediaFetches = Math.min(numberEnv(env.POLITILY_MAX_MEDIA_FETCHES_PER_RUN, 6), 10);
+    const maxMediaFetches = Math.min(numberEnv(env.POLITILY_MAX_MEDIA_FETCHES_PER_RUN, 10), 14);
     let mediaFetches = 0;
-    const scanDeadline = Date.now() + 42000;
+    const scanDeadline = Date.now() + 55000;
     const sources = rotateSources(
       (await listSources(env.DB)).filter((source) => source.active)
     ).slice(0, Math.max(1, maxSources));
@@ -302,7 +302,7 @@ export async function sendScheduledDigest(env: RuntimeEnv) {
 
   await ensureDatabase(env.DB);
   const window = todayDigestWindow();
-  const stories = await listStoriesInDateRange(env.DB, window.startIso, window.endIso, 100);
+  const stories = await listStoriesInDateRange(env.DB, window.startIso, window.endIso, 180);
   return sendStrategicDigestEmail(env, stories, {
     startIso: window.startIso,
     endIso: window.endIso,
@@ -675,6 +675,12 @@ async function fetchSignals(source: SignalSource, timeoutMs: number): Promise<Ra
 
 function rotateSources(sources: SignalSource[]) {
   return [...sources].sort((a, b) => {
+    const aFast = fastSourceRank(a);
+    const bFast = fastSourceRank(b);
+    if (aFast !== bFast) {
+      return bFast - aFast;
+    }
+
     const aFresh = a.category.toLowerCase().includes("freshness") || a.category.toLowerCase().includes("direct newsroom rss") ? 1 : 0;
     const bFresh = b.category.toLowerCase().includes("freshness") || b.category.toLowerCase().includes("direct newsroom rss") ? 1 : 0;
     if (aFresh !== bFresh) {
@@ -695,6 +701,16 @@ function rotateSources(sources: SignalSource[]) {
 
     return b.priority - a.priority;
   });
+}
+
+function fastSourceRank(source: SignalSource) {
+  const text = `${source.name} ${source.category} ${source.url} ${source.sourceLane ?? ""}`.toLowerCase();
+  if (/ani/.test(text) && /parliament|lok sabha|rajya sabha|exclusive|wire|politics/.test(text)) return 5;
+  if (/parliament|lok sabha|rajya sabha|sansad|prsindia|bill|ordinance/.test(text)) return 4;
+  if (/pti|uni|reuters|associated press|agency|wire/.test(text)) return 3;
+  if (/freshness|direct newsroom rss/.test(text)) return 2;
+  if (/hot topic/.test(text)) return 1;
+  return 0;
 }
 
 async function fetchWithTimeout(
@@ -746,7 +762,7 @@ function parseFeed(xml: string, source: SignalSource): RawSignal[] {
   const items = Array.from(xml.matchAll(/<item\b[\s\S]*?<\/item>/gi)).slice(0, 18);
   const entries = items.length
     ? items.map((match) => match[0])
-    : Array.from(xml.matchAll(/<entry\b[\s\S]*?<\/entry>/gi)).slice(0, 18).map((match) => match[0]);
+    : Array.from(xml.matchAll(/<entry\b[\s\S]*?<\/entry>/gi)).slice(0, 24).map((match) => match[0]);
 
   return entries
     .map((entry) => {
@@ -776,7 +792,7 @@ function parseFeed(xml: string, source: SignalSource): RawSignal[] {
       };
     })
     .filter((signal) => isUsableSignal(signal.title, signal.summary, signal.language) && !isNoiseSignal(signal.title, signal.summary))
-    .slice(0, 12);
+    .slice(0, 16);
 }
 
 function findRelatedStory(signal: RawSignal, recentStories: StoredStory[]) {
@@ -1233,7 +1249,7 @@ function todayDigestWindow() {
   return {
     startIso,
     endIso,
-    label: `${formatHumanDate(today)} till ${formatIstTime(endIso)}`,
+    label: `Media report - ${formatHumanDate(today)} till ${formatIstTime(endIso)}`,
   };
 }
 

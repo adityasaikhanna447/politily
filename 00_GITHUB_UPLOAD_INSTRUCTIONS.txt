@@ -1,6 +1,6 @@
 UPLOAD THIS CLOUDFLARE-ONLY FOLDER TO GITHUB
 
-REFRESHED FOR THE POLITILY NEWSROOM WAR ROOM ON 2026-07-25.
+REFRESHED FOR THE POLITILY NEWSROOM WAR ROOM ON 2026-08-05.
 
 What to do:
 
@@ -36,5 +36,9 @@ Root directory: /
 Email secrets needed in Cloudflare:
 GEMINI_API_KEY
 RESEND_API_KEY
-ALERT_EMAIL
-ALERT_FROM_EMAIL
+
+ALERT_EMAIL and ALERT_FROM_EMAIL are already pinned as text vars in vite.config.ts for this ready package. Change them there only if you want a different recipient or sender.
+
+Cron triggers expected after deploy:
+*/2 * * * *
+30 9,15 * * *

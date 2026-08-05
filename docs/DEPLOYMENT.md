@@ -25,31 +25,31 @@ Copy `.env.example` and set these in local development and production:
 - `POLITILY_MIN_STORY_DATE`
 - `POLITILY_MAX_MEDIA_FETCHES_PER_RUN`
 
-For Cloudflare production, set `GEMINI_API_KEY`, `RESEND_API_KEY`, `ALERT_EMAIL`, and `ALERT_FROM_EMAIL` as secrets in Workers > Settings > Variables and secrets. This keeps email settings stable across Git or Wrangler deploys without committing your personal inbox or sender domain.
+For Cloudflare production, keep `GEMINI_API_KEY` and `RESEND_API_KEY` as secrets in Workers > Settings > Variables and secrets. In this personal deployment, `ALERT_EMAIL` and `ALERT_FROM_EMAIL` are pinned as non-secret text vars in `vite.config.ts` so Git deploys do not silently remove them. If you change inbox or sender domain, edit those two values there and redeploy.
 
 ## Cloudflare Runtime
 
 The app exports a Worker `scheduled()` handler in `worker/index.ts`. Configure a cron trigger such as:
 
 ```txt
-*/5 * * * *
+*/2 * * * *
 ```
 
-That checks sources every 5 minutes. Scanning RSS/GDELT/open pages uses 0 Gemini tokens; Gemini is used only when a brief is generated.
+That checks sources every 2 minutes. Scanning RSS/GDELT/open pages uses 0 Gemini tokens; Gemini is used only when a brief is generated.
 
 For early-access free-tier scans, start with:
 
 ```txt
-POLITILY_MAX_SOURCES_PER_RUN=18
-POLITILY_FETCH_TIMEOUT_MS=6500
+POLITILY_MAX_SOURCES_PER_RUN=32
+POLITILY_FETCH_TIMEOUT_MS=5000
 POLITILY_ALERT_MIN_SCORE=85
-POLITILY_MAX_EMAIL_ALERTS_PER_RUN=3
+POLITILY_MAX_EMAIL_ALERTS_PER_RUN=4
 POLITILY_MAX_DEEP_BRIEFS_PER_RUN=0
 ```
 
 ## Email Rhythm
 
-- Scanner cron: `*/5 * * * *`
-- Scheduled digest cron: `30 8,15 * * *`
-- Digest timing in India: 2 PM and 9 PM IST
+- Scanner cron: `*/2 * * * *`
+- Scheduled digest cron: `30 9,15 * * *`
+- Digest timing in India: 3 PM and 9 PM IST
 - Instant alerts: only issues at `POLITILY_ALERT_MIN_SCORE=85` or above

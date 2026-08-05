@@ -5,6 +5,7 @@ Politily starts with a small source set and is designed to grow.
 ## Included Active Sources
 
 - Fresh 24h India politics, protest/courts, party/election, and economy/policy sweeps
+- Dedicated ANI National Politics direct RSS plus ANI Google News backup
 - Direct newsroom RSS feeds from national portals
 - Regional-language Hindi/regional search lanes
 - Social/Viral early-chatter search lane
@@ -61,3 +62,7 @@ Add these fields when you add a new source:
 ## Verification Rule
 
 Treat official records as primary, credible news reports as secondary, and social posts as leads until confirmed.
+
+## ANI Integration Note
+
+ANI is active as a high-priority agency wire because it often breaks or syndicates political stories quickly. Politily marks it as `sourceLane: agency` and `biasLean: right`, and the UI/email adds a wire-origin warning when ANI appears in the source trail. Do not count ANI plus portal reposts as separate independent proof; use them as early signal, then verify with a primary record and at least one non-wire report before scripting.

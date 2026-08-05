@@ -9,7 +9,7 @@ Politily is a zero-budget-first political monitoring desk for one creator.
 - Cloudflare D1 for source registry, seen stories, scores, briefs, and scan runs.
 - Gemini Interactions API for context briefs and creator scripts.
 - Resend for email alerts.
-- Cloudflare Worker scheduled handlers for 5-minute scanning and two daily table digest emails.
+- Cloudflare Worker scheduled handlers for 2-minute scanning and two daily table digest emails.
 
 ## Pipeline
 
@@ -29,6 +29,7 @@ Politily is a zero-budget-first political monitoring desk for one creator.
 3. Deep research
    - Stories above `POLITILY_SCORE_THRESHOLD` are eligible for Gemini.
    - The prompt asks for historical context, geographical context, key people, facts, source confidence, narratives, what happens next, and a creator script.
+   - The creator script target is long-form: normally 2200-3000 words in Roman Hindi/Hinglish, with a thesis, escalation chain, named actor/institution background, data checkpoints, counter-view, unresolved proof, and next-watch ending.
    - The prompt requires an original Politily voice rather than imitation of any living creator.
 
 4. Alerting
@@ -46,4 +47,4 @@ Politily is a zero-budget-first political monitoring desk for one creator.
 
 ## 0 Budget Notes
 
-True internet-wide instant detection is not free. This app aims for a practical 5 to 15 minute loop using open feeds, GDELT, official RSS, and party/agency press-release sources. More expensive real-time firehoses can be added later without changing the dashboard workflow.
+True internet-wide instant detection is not free. This app aims for a practical 2 to 6 minute loop using open feeds, GDELT, official RSS, and party/agency press-release sources. More expensive real-time firehoses can be added later without changing the dashboard workflow.

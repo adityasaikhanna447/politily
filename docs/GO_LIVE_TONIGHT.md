@@ -72,9 +72,9 @@ APP_BASE_URL=https://your-worker-url.workers.dev
 POLITILY_SCORE_THRESHOLD=72
 POLITILY_ALERT_MIN_SCORE=85
 POLITILY_MAX_DEEP_BRIEFS_PER_RUN=0
-POLITILY_MAX_EMAIL_ALERTS_PER_RUN=5
+POLITILY_MAX_EMAIL_ALERTS_PER_RUN=4
 POLITILY_MAX_SOURCES_PER_RUN=18
-POLITILY_FETCH_TIMEOUT_MS=6500
+POLITILY_FETCH_TIMEOUT_MS=5000
 POLITILY_MIN_STORY_DATE=2026-07-20T00:00:00+05:30
 POLITILY_MAX_MEDIA_FETCHES_PER_RUN=6
 ```
@@ -114,11 +114,11 @@ drizzle/0000_steep_thor.sql
 Use these cron triggers:
 
 ```txt
-*/5 * * * *
-30 8,15 * * *
+*/2 * * * *
+30 9,15 * * *
 ```
 
-The first cron scans every 5 minutes. The second sends scheduled digest emails at 2:00 PM and 9:00 PM IST.
+The first cron scans every 2 minutes. The second sends scheduled digest emails at 3:00 PM and 9:00 PM IST.
 
 Instant alert rule:
 
