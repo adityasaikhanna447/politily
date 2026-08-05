@@ -7,6 +7,8 @@ It watches open political sources, scores new stories, generates context-rich br
 ## What It Does
 
 - Monitors GDELT, official RSS feeds, national/regional portals, ANI/PTI-style agency wires, and social/viral early-signal lanes.
+- Groups reports into issue umbrellas using aliases, named entities, topic buckets, key actors, and source-trail confidence so repeated headlines become one research object.
+- Tracks parts inside each umbrella, such as protest/mobilisation, court/legal turn, policy move, election angle, party move, investigation/revelation, diplomacy, and social/viral signal. This lets one issue become a multi-part content series instead of ten repeated newspaper cards.
 - Scores stories for novelty, political weight, India/global geopolitical relevance, viral potential, and public mood risk.
 - Stores seen stories and scan history in Cloudflare D1.
 - Uses Gemini to generate historical context, geographical context, facts, narratives, source confidence, STEPPS strategy, a question-led outline, and a long-form 2500-3400 word Roman Hindi/Hinglish master script.
@@ -63,7 +65,7 @@ Never commit `.env` files.
 
 - Source scan: every 2 minutes.
 - Scheduled digest: two table reports per day, 3:00 PM IST and 9:00 PM IST.
-- Instant alerts: only new or strengthened issues scoring `85/100` or higher.
+- Instant alerts: only new or strengthened issue umbrellas scoring `85/100` or higher.
 - Gemini tokens are not used for scanning or scheduled digests; they are used only when a deep brief/script is generated.
 
 ## License

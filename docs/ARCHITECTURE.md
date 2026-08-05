@@ -19,6 +19,9 @@ Politily is a zero-budget-first political monitoring desk for one creator.
   - PIB and party press-release slots are seeded as paused examples until their final feed URLs are confirmed.
 
 2. Story scoring
+  - Each signal is normalized into an issue umbrella using alias cleanup, named entities, key actors, topic buckets, and high-signal token phrases.
+  - New reports attach to an existing umbrella when the issue confidence score is high, so one national issue does not become ten separate newspaper cards.
+  - Each umbrella also keeps a part/update label from the event/action layer: protest, court/legal turn, policy/bill, election, party move, investigation/revelation, diplomacy, security, economy, or social/viral signal. New revelations therefore become new parts inside the same issue instead of a separate unrelated card.
   - Novelty checks recent stored stories for title overlap.
   - Political weight checks institution, party, election, policy, court, and administration terms.
    - Geopolitical relevance separates India foreign-policy signals from wider global-politics signals.
@@ -35,8 +38,8 @@ Politily is a zero-budget-first political monitoring desk for one creator.
 4. Alerting
    - Email alerts are sent only when `RESEND_API_KEY`, `ALERT_EMAIL`, and `ALERT_FROM_EMAIL` are configured.
    - `POLITILY_MAX_DEEP_BRIEFS_PER_RUN` keeps Gemini usage controlled.
-   - Routine updates are grouped into midday and end-of-day topic tables.
-   - Instant emails are reserved for new or strengthened issues scoring 85/100 or higher.
+   - Routine updates are grouped into midday and end-of-day topic-umbrella tables.
+   - Instant emails are reserved for new or strengthened issue umbrellas scoring 85/100 or higher.
 
 ## Data Model
 

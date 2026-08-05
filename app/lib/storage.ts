@@ -358,7 +358,7 @@ export async function addStorySource(
     .first<Row>();
 
   if (existing) {
-    return;
+    return false;
   }
 
   await db
@@ -379,6 +379,8 @@ export async function addStorySource(
       link.publishedAt
     )
     .run();
+
+  return true;
 }
 
 export async function strengthenStoryFromSignal(

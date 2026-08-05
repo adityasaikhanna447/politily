@@ -2,7 +2,10 @@ import type { PolitilyBrief, RuntimeEnv, StoredStory, StorySourceLink } from "./
 import {
   areSameIssue,
   canonicalIssueKey,
+  canonicalIssueActors,
   canonicalIssueLabel,
+  canonicalIssuePartLabel,
+  canonicalIssueTopic,
   issueSimilarity,
 } from "./issues";
 import { buildWireOriginReport, linkWireOriginLabel } from "./wire-origin";
@@ -21,6 +24,7 @@ interface DigestIssue {
   sourceLinks: StorySourceLink[];
   sources: string[];
   score: number;
+  velocity: number;
 }
 
 const DEFAULT_APP_BASE_URL = "https://politily.adityakhanna-tcc.workers.dev/";
@@ -77,6 +81,9 @@ export async function sendSignalEmail(env: RuntimeEnv, story: StoredStory) {
 
   const storyLink = issueLink(env, story.id);
   const briefLink = briefPageLink(env, story.id);
+  const issueTitle = canonicalIssueLabel(story);
+  const partLabel = canonicalIssuePartLabel(story);
+  const actors = canonicalIssueActors(story);
   const sources = uniqueEmailStrings([
     story.sourceName,
     ...(story.sourceLinks ?? []).map((link) => link.sourceName),
@@ -91,9 +98,9 @@ export async function sendSignalEmail(env: RuntimeEnv, story: StoredStory) {
     body: JSON.stringify({
       from: env.ALERT_FROM_EMAIL,
       to: [env.ALERT_EMAIL],
-      subject: `[Politily Signal ${story.totalScore}] ${cleanEmailText(story.title)}`,
-      html: buildSignalHtml(story, storyLink, briefLink, sources),
-      text: buildSignalText(story, storyLink, briefLink, sources),
+      subject: `[Politily Umbrella ${story.totalScore}] ${cleanEmailText(issueTitle)} - ${cleanEmailText(partLabel)} (${sources.length} sources)`,
+      html: buildSignalHtml(story, storyLink, briefLink, sources, issueTitle, partLabel, actors),
+      text: buildSignalText(story, storyLink, briefLink, sources, issueTitle, partLabel, actors),
     }),
   });
 
@@ -192,8 +199,9 @@ export async function sendStrategicDigestEmail(
   };
 }
 
-function buildSignalHtml(story: StoredStory, storyLink: string, briefLink: string, sources: string[]) {
+function buildSignalHtml(story: StoredStory, storyLink: string, briefLink: string, sources: string[], issueTitle: string, partLabel: string, actors: string[]) {
   const wireReport = buildWireOriginReport(story);
+  const reportCount = Math.max(1, story.sourceLinks?.length ?? sources.length);
   const links = (story.sourceLinks ?? [])
     .slice(0, 8)
     .map((link) => `<li><a href="${escapeHtml(link.url)}" style="color:#8dbdff;">${escapeHtml(cleanEmailText(link.sourceName))}</a> - ${escapeHtml(cleanEmailText(link.title))}</li>`)
@@ -203,8 +211,11 @@ function buildSignalHtml(story: StoredStory, storyLink: string, briefLink: strin
   <html>
     <body style="margin:0;background:#050708;color:#f6efe4;font-family:Arial,sans-serif;">
       <main style="max-width:720px;margin:0 auto;padding:28px;">
-        <p style="letter-spacing:.14em;text-transform:uppercase;color:#8fa0a8;font-size:12px;margin:0 0 8px;">Politily fast signal</p>
-        <h1 style="font-size:26px;line-height:1.18;margin:0 0 12px;">${escapeHtml(cleanEmailText(story.title))}</h1>
+        <p style="letter-spacing:.14em;text-transform:uppercase;color:#8fa0a8;font-size:12px;margin:0 0 8px;">Politily issue umbrella update</p>
+        <h1 style="font-size:26px;line-height:1.18;margin:0 0 8px;">${escapeHtml(cleanEmailText(issueTitle))}</h1>
+        <p style="color:#8fa0a8;font-weight:800;margin:0 0 12px;">${reportCount} reports grouped | Part/update: ${escapeHtml(cleanEmailText(partLabel))}</p>
+        <p style="color:#8fa0a8;font-weight:800;margin:0 0 12px;">Topic bucket: ${escapeHtml(canonicalIssueTopic(story))} | Key actors: ${escapeHtml(actors.join(", ") || "emerging issue")}</p>
+        <p style="color:#d6cec2;font-weight:800;margin:0 0 12px;">Latest report: ${escapeHtml(cleanEmailText(story.title))}</p>
         <p style="color:#d9dddc;line-height:1.55;margin:0 0 14px;">${escapeHtml(issueBioForEmail(story, sources))}</p>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:0 0 18px;">
           ${digestStat("Total", String(story.totalScore))}
@@ -212,7 +223,7 @@ function buildSignalHtml(story: StoredStory, storyLink: string, briefLink: strin
           ${digestStat("Political", String(story.politicalWeight))}
           ${digestStat("Sources", String(Math.max(1, sources.length)))}
         </div>
-        <p style="border-left:3px solid #3b9cff;padding-left:12px;color:#f2eee6;line-height:1.55;margin:0 0 14px;"><strong>Why this email:</strong> This crossed the instant ${escapeHtml(String(story.totalScore))}/100 signal rule or strengthened a watched issue. It is worth opening the issue page before recording.</p>
+        <p style="border-left:3px solid #3b9cff;padding-left:12px;color:#f2eee6;line-height:1.55;margin:0 0 14px;"><strong>Why this email:</strong> This issue umbrella crossed the instant ${escapeHtml(String(story.totalScore))}/100 rule or a new report strengthened a watched issue. Open the grouped issue before recording.</p>
         <p style="border-left:3px solid #ef4444;padding-left:12px;color:#f2eee6;line-height:1.55;margin:0 0 14px;"><strong>Wire origin:</strong> ${escapeHtml(wireReport.label)}</p>
         <p style="border-left:3px solid #d6cec2;padding-left:12px;color:#f2eee6;line-height:1.55;margin:0 0 14px;"><strong>Creator next step:</strong> Open the issue page, inspect the source trail, then generate the deep brief only if the evidence is strong enough.</p>
         <p style="color:#b7bdbe;line-height:1.55;margin:0 0 8px;"><strong>Source mix:</strong> ${escapeHtml(sources.join(", ") || story.sourceName)}</p>
@@ -226,11 +237,18 @@ function buildSignalHtml(story: StoredStory, storyLink: string, briefLink: strin
   </html>`;
 }
 
-function buildSignalText(story: StoredStory, storyLink: string, briefLink: string, sources: string[]) {
+function buildSignalText(story: StoredStory, storyLink: string, briefLink: string, sources: string[], issueTitle: string, partLabel: string, actors: string[]) {
   const wireReport = buildWireOriginReport(story);
-  return `Politily fast signal
+  const reportCount = Math.max(1, story.sourceLinks?.length ?? sources.length);
+  return `Politily issue umbrella update
 
-${cleanEmailText(story.title)}
+${cleanEmailText(issueTitle)}
+
+Part/update: ${cleanEmailText(partLabel)}
+Topic bucket: ${canonicalIssueTopic(story)}
+Key actors: ${actors.join(", ") || "emerging issue"}
+Latest report: ${cleanEmailText(story.title)}
+Reports grouped: ${reportCount}
 
 Score: ${story.totalScore}/100
 Viral: ${story.viralPotential}/100
@@ -377,6 +395,8 @@ function buildDigestIssueRowHtml(issue: DigestIssue, rank: number, appLink: stri
   const lead = issue.lead;
   const storyLink = `${appLink.replace(/\/$/, "")}/?story=${encodeURIComponent(lead.id)}&view=issue`;
   const briefLink = `${appLink.replace(/\/$/, "")}/?story=${encodeURIComponent(lead.id)}&view=brief`;
+  const partLabel = canonicalIssuePartLabel(lead);
+  const actors = canonicalIssueActors(lead);
   const facts = factsForEmail(issue);
   const sourceLinks = sourceLinksForEmail(issue);
   const sourceHtml = sourceLinks.length
@@ -403,7 +423,9 @@ function buildDigestIssueRowHtml(issue: DigestIssue, rank: number, appLink: stri
     <td valign="top" style="padding:14px 10px;border-bottom:1px solid #263135;width:25%;">
       <div style="display:inline-block;border:1px solid ${topicColor(topicForStory(lead))};color:#f6efe4;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:900;text-transform:uppercase;margin:0 0 8px;">${escapeHtml(topicForStory(lead))}</div>
       <h2 style="font-size:17px;line-height:1.25;margin:0;color:#fffaf0;">${escapeHtml(issue.label)}</h2>
-      <p style="color:#8fa0a8;font-size:12px;line-height:1.45;margin:8px 0 0;">${issue.sources.length} sources | ${issue.stories.length} reports</p>
+      <p style="color:#d6cec2;font-size:12px;line-height:1.45;margin:8px 0 0;"><strong>Part/update:</strong> ${escapeHtml(partLabel)}</p>
+      <p style="color:#8fa0a8;font-size:12px;line-height:1.45;margin:6px 0 0;"><strong>Actors:</strong> ${escapeHtml(actors.join(", ") || "emerging issue")}</p>
+      <p style="color:#8fa0a8;font-size:12px;line-height:1.45;margin:6px 0 0;">Umbrella strength ${issue.velocity} | ${issue.sources.length} sources | ${issue.stories.length} stored stories</p>
     </td>
     <td valign="top" style="padding:14px 10px;border-bottom:1px solid #263135;width:31%;">
       <p style="color:#d9dddc;line-height:1.5;margin:0 0 8px;">${escapeHtml(issueBioForEmail(lead, issue.sources))}</p>
@@ -426,14 +448,18 @@ function buildDigestIssueHtml(issue: DigestIssue, rank: number, appLink: string)
   const lead = issue.lead;
   const storyLink = `${appLink.replace(/\/$/, "")}/?story=${encodeURIComponent(lead.id)}&view=issue`;
   const briefLink = `${appLink.replace(/\/$/, "")}/?story=${encodeURIComponent(lead.id)}&view=brief`;
+  const partLabel = canonicalIssuePartLabel(lead);
+  const actors = canonicalIssueActors(lead);
   const sources = issue.sourceLinks.slice(0, 7)
     .map((link) => `<li><a href="${escapeHtml(link.url)}" style="color:#8dbdff;">${escapeHtml(cleanEmailText(link.sourceName))}</a> - ${escapeHtml(cleanEmailText(link.title))}</li>`)
     .join("");
   const sourceNames = issue.sources.slice(0, 8).map((source) => escapeHtml(source)).join(", ");
 
   return `<section style="border:1px solid #263135;border-radius:12px;padding:18px;background:#0f1517;margin:0 0 14px;">
-    <p style="margin:0 0 8px;color:#d5c9b6;font-weight:700;">#${rank} | Score ${issue.score}/100 | ${escapeHtml(topicForStory(lead))} | ${issue.sources.length} sources | ${issue.stories.length} reports</p>
+    <p style="margin:0 0 8px;color:#d5c9b6;font-weight:700;">#${rank} | Score ${issue.score}/100 | ${escapeHtml(topicForStory(lead))} | umbrella strength ${issue.velocity} | ${issue.sources.length} sources</p>
     <h2 style="font-size:22px;line-height:1.25;margin:0 0 10px;color:#fffaf0;">${escapeHtml(issue.label)}</h2>
+    <p style="color:#d6cec2;line-height:1.45;margin:0 0 10px;"><strong>Part/update:</strong> ${escapeHtml(partLabel)}</p>
+    <p style="color:#8fa0a8;line-height:1.45;margin:0 0 10px;"><strong>Actors:</strong> ${escapeHtml(actors.join(", ") || "emerging issue")}</p>
     <p style="color:#d9dddc;line-height:1.55;margin:0 0 12px;">${escapeHtml(issueBioForEmail(lead, issue.sources))}</p>
     <div style="border-left:3px solid #3b9cff;padding-left:12px;margin:0 0 12px;color:#f2eee6;">
       <strong>Creator angle:</strong> ${escapeHtml(videoAngleForEmail(lead))}
@@ -478,9 +504,13 @@ function buildDigestText(
     group.issues.forEach((issue) => {
       rank += 1;
       const lead = issue.lead;
+      const partLabel = canonicalIssuePartLabel(lead);
+      const actors = canonicalIssueActors(lead);
       lines.push(
         `#${rank} ${issue.label}`,
-        `Score: ${issue.score}/100 | Sources: ${issue.sources.length} | Reports: ${issue.stories.length}`,
+        `Part/update: ${partLabel}`,
+        `Actors: ${actors.join(", ") || "emerging issue"}`,
+        `Score: ${issue.score}/100 | Umbrella strength: ${issue.velocity} | Sources: ${issue.sources.length} | Stored stories: ${issue.stories.length}`,
         `Issue bio: ${issueBioForEmail(lead, issue.sources)}`,
         `Creator angle: ${videoAngleForEmail(lead)}`,
         `Facts/data lead: ${factsForEmail(issue) || "Generate/open brief for facts and figures."}`,
@@ -513,7 +543,7 @@ function buildDigestIssues(stories: StoredStory[]) {
     const key = issueKeyForEmail(story);
     const existing =
       issues.find((issue) => issue.id === key) ||
-      issues.find((issue) => areSameIssue(issue.lead, story) || issueSimilarity(issue.lead, story) >= 0.48);
+      issues.find((issue) => areSameIssue(issue.lead, story) || issueSimilarity(issue.lead, story) >= 0.58);
     const links = uniqueEmailLinks([
       ...(story.sourceLinks ?? []),
       {
@@ -532,6 +562,7 @@ function buildDigestIssues(stories: StoredStory[]) {
       existing.sourceLinks = uniqueEmailLinks(existing.sourceLinks.concat(links));
       existing.sources = uniqueEmailStrings(existing.sources.concat(sources));
       existing.score = Math.max(existing.score, story.totalScore);
+      existing.velocity = issueVelocity(existing);
       if (story.totalScore > existing.lead.totalScore) {
         existing.lead = story;
         existing.label = issueLabelForEmail(story);
@@ -547,10 +578,15 @@ function buildDigestIssues(stories: StoredStory[]) {
       sourceLinks: links,
       sources,
       score: story.totalScore,
+      velocity: 1,
     });
   });
 
-  return issues.sort((left, right) => issueDateValue(right) - issueDateValue(left) || right.score - left.score || right.sources.length - left.sources.length);
+  issues.forEach((issue) => {
+    issue.velocity = issueVelocity(issue);
+  });
+
+  return issues.sort((left, right) => issuePriorityScore(right) - issuePriorityScore(left) || issueDateValue(right) - issueDateValue(left));
 }
 
 function groupDigestIssuesByTopic(issues: DigestIssue[]) {
@@ -564,13 +600,13 @@ function groupDigestIssuesByTopic(issues: DigestIssue[]) {
     .map(([topic, topicIssues]) => ({
       topic,
       issues: topicIssues.sort(
-        (left, right) => issueDateValue(right) - issueDateValue(left) || right.score - left.score || right.sources.length - left.sources.length
+        (left, right) => issuePriorityScore(right) - issuePriorityScore(left) || issueDateValue(right) - issueDateValue(left)
       ),
     }))
     .sort((left, right) => {
       const weightDiff = topicWeight(left.topic) - topicWeight(right.topic);
       if (weightDiff !== 0) return weightDiff;
-      return issueDateValue(right.issues[0]) - issueDateValue(left.issues[0]);
+      return issuePriorityScore(right.issues[0]) - issuePriorityScore(left.issues[0]) || issueDateValue(right.issues[0]) - issueDateValue(left.issues[0]);
     });
 }
 
@@ -635,6 +671,15 @@ function issueDateValue(issue?: DigestIssue) {
     const parsed = Date.parse(story.publishedAt || story.detectedAt);
     return Number.isFinite(parsed) ? Math.max(max, parsed) : max;
   }, 0);
+}
+
+function issueVelocity(issue: DigestIssue) {
+  return Math.max(1, issue.sources.length + issue.sourceLinks.length + issue.stories.length - 1);
+}
+
+function issuePriorityScore(issue?: DigestIssue) {
+  if (!issue) return 0;
+  return issue.score + Math.min(18, issue.velocity * 2) + (hasAgencySource(issue) ? 5 : 0);
 }
 
 function topicColor(topic: string) {

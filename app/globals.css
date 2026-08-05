@@ -339,33 +339,6 @@ a {
   padding: 18px 18px 112px;
 }
 
-.system-note {
-  align-items: center;
-  background: linear-gradient(90deg, rgba(223, 74, 60, 0.1), rgba(46, 125, 225, 0.08));
-  border: 1px solid rgba(214, 206, 194, 0.15);
-  border-radius: 8px;
-  color: var(--muted);
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  margin-bottom: 14px;
-  padding: 10px 14px;
-}
-
-.system-note span,
-.system-note strong {
-  font-size: 12px;
-}
-
-.system-note strong {
-  color: var(--text);
-  font-weight: 700;
-}
-
-.mobile-news-summary {
-  display: none;
-}
-
 .portal-summary {
   color: var(--muted);
   font-size: 13px;
@@ -1260,6 +1233,33 @@ a {
   margin-top: 0;
 }
 
+.umbrella-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 9px;
+}
+
+.umbrella-pill {
+  background: rgba(214, 206, 194, 0.1);
+  border: 1px solid rgba(214, 206, 194, 0.24);
+  border-radius: 999px;
+  color: var(--gold);
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  margin: 0;
+  padding: 5px 9px;
+  text-transform: uppercase;
+}
+
+.umbrella-pill.subtle {
+  background: rgba(59, 156, 255, 0.1);
+  border-color: rgba(59, 156, 255, 0.28);
+  color: #b9d4ff;
+}
+
 .issue-source-strip {
   display: flex;
   flex-wrap: wrap;
@@ -1914,41 +1914,6 @@ select:focus-visible {
     padding: 12px 10px 106px;
   }
 
-  .system-note {
-    display: none;
-  }
-
-  .mobile-news-summary {
-    align-items: center;
-    background: transparent;
-    border: 0;
-    display: flex;
-    gap: 7px;
-    margin-bottom: 12px;
-    overflow-x: auto;
-    padding: 0 0 2px;
-  }
-
-  .mobile-news-summary span {
-    color: var(--faint);
-    font-size: 10px;
-    font-weight: 950;
-    min-width: max-content;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .mobile-news-summary strong {
-    background: var(--card-2);
-    border: 1px solid var(--line);
-    border-radius: 7px;
-    color: var(--surface);
-    flex: 0 0 auto;
-    font-size: 12px;
-    padding: 6px 9px;
-    text-align: center;
-  }
-
   .kpi-grid {
     display: none;
   }
@@ -2283,75 +2248,6 @@ select:focus-visible {
     padding: 18px 24px 118px;
   }
 
-  .system-note {
-    background: rgba(11, 16, 18, 0.84);
-    border-color: rgba(46, 125, 225, 0.22);
-    margin-bottom: 16px;
-  }
-
-  .radar-hero {
-    align-items: stretch;
-    background:
-      linear-gradient(130deg, rgba(46, 125, 225, 0.2), transparent 40%),
-      linear-gradient(315deg, rgba(223, 74, 60, 0.16), transparent 46%),
-      rgba(8, 12, 14, 0.96);
-    border: 1px solid rgba(214, 206, 194, 0.14);
-    border-radius: 8px;
-    display: grid;
-    gap: 18px;
-    grid-template-columns: minmax(0, 1fr) auto;
-    margin-bottom: 14px;
-    overflow: hidden;
-    padding: 16px 18px;
-  }
-
-  .radar-hero h1 {
-    font-size: clamp(28px, 3.1vw, 44px);
-    font-weight: 950;
-    letter-spacing: 0;
-    line-height: 0.98;
-    margin: 9px 0 0;
-  }
-
-  .radar-hero p {
-    color: var(--muted);
-    font-size: 14px;
-    margin: 9px 0 0;
-    max-width: 680px;
-  }
-
-  .radar-stats {
-    display: grid;
-    gap: 8px;
-    grid-template-columns: repeat(3, 104px);
-  }
-
-  .radar-stats span {
-    background: rgba(2, 4, 5, 0.68);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    display: grid;
-    justify-items: start;
-    min-height: 74px;
-    padding: 11px;
-  }
-
-  .radar-stats strong {
-    color: var(--gold);
-    font-size: 28px;
-    font-weight: 950;
-    line-height: 1;
-  }
-
-  .radar-stats small {
-    align-self: end;
-    color: var(--faint);
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
   .watch-grid {
     align-items: start;
     gap: 16px;
@@ -2562,66 +2458,6 @@ select:focus-visible {
     background: rgba(2, 4, 5, 0.98);
   }
 
-  .radar-hero {
-    background:
-      linear-gradient(135deg, rgba(46, 125, 225, 0.16), transparent 44%),
-      linear-gradient(320deg, rgba(223, 74, 60, 0.14), transparent 50%),
-      rgba(9, 14, 16, 0.98);
-    border: 1px solid rgba(214, 206, 194, 0.14);
-    border-radius: 8px;
-    margin-bottom: 12px;
-    padding: 14px;
-  }
-
-  .radar-hero h1 {
-    font-size: 28px;
-    font-weight: 950;
-    line-height: 1;
-    margin: 8px 0 0;
-  }
-
-  .radar-hero p {
-    color: var(--muted);
-    font-size: 13px;
-    line-height: 1.45;
-    margin: 9px 0 0;
-  }
-
-  .radar-stats {
-    display: grid;
-    gap: 7px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    margin-top: 12px;
-  }
-
-  .radar-stats span {
-    background: rgba(2, 4, 5, 0.56);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 9px;
-  }
-
-  .radar-stats strong,
-  .radar-stats small {
-    display: block;
-  }
-
-  .radar-stats strong {
-    color: var(--gold);
-    font-size: 23px;
-    font-weight: 950;
-    line-height: 1;
-  }
-
-  .radar-stats small {
-    color: var(--faint);
-    font-size: 9px;
-    font-weight: 900;
-    letter-spacing: 0.06em;
-    margin-top: 5px;
-    text-transform: uppercase;
-  }
-
   .feed-tools {
     align-items: stretch;
     background: transparent;
@@ -2746,11 +2582,4 @@ select:focus-visible {
   .issue-detail-page .action-row .btn {
     flex: 1 1 150px;
   }
-}
-
-/* Removed from the frontend surface: old scan banner and creator-radar hero. */
-.system-note,
-.mobile-news-summary,
-.radar-hero {
-  display: none !important;
 }

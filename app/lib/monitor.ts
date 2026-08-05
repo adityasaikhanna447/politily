@@ -1,7 +1,7 @@
 import { getDemoState } from "./demo-data";
 import { sendBriefEmail, sendSignalEmail, sendStrategicDigestEmail } from "./email";
 import { generateBriefWithGemini } from "./gemini";
-import { areSameIssue, issueSimilarity } from "./issues";
+import { areSameIssue, issueMatchConfidence, issueSimilarity } from "./issues";
 import { fingerprintFor, scoreSignal, titleSimilarity } from "./scoring";
 import {
   addStorySource,
@@ -84,7 +84,7 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
     ).slice(0, Math.max(1, maxSources));
     const recentStories = await listRecentStories(env.DB, 160);
     const triggeredStories: StoredStory[] = [];
-    const alertCandidates = new Map<string, StoredStory>();
+    const alertCandidates = new Map<string, { story: StoredStory; forceSend: boolean }>();
     let scannedCount = 0;
     let createdCount = 0;
     let emailedCount = 0;
@@ -136,7 +136,7 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
         const related = existing ?? findRelatedStory(signal, recentStories);
 
         if (related) {
-          await addStorySource(env.DB, {
+          const sourceAdded = await addStorySource(env.DB, {
             storyId: related.id,
             title: signal.title,
             url: signal.url,
@@ -161,8 +161,11 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
             sentimentScore: Math.max(related.sentimentScore, scores.sentimentScore),
           };
           updateRecentStory(recentStories, updatedRelated);
-          if (shouldFastAlertRelatedIssue(updatedRelated, signal, alertThreshold)) {
-            alertCandidates.set(updatedRelated.id, updatedRelated);
+          if (shouldFastAlertRelatedIssue(updatedRelated, signal, alertThreshold, sourceAdded)) {
+            alertCandidates.set(updatedRelated.id, {
+              story: updatedRelated,
+              forceSend: Boolean(sourceAdded && updatedRelated.emailSentAt),
+            });
           }
           continue;
         }
@@ -204,7 +207,7 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
         }
 
         if (isFastAlertWorthy(signal, scores, alertThreshold)) {
-          alertCandidates.set(story.id, story);
+          alertCandidates.set(story.id, { story, forceSend: false });
         }
       }
     }
@@ -225,17 +228,20 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
       }
     }
 
-    const remainingAlerts = prioritizeBriefCandidates(Array.from(alertCandidates.values())).slice(
+    const remainingAlerts = Array.from(alertCandidates.values())
+      .sort((left, right) => compareAlertCandidates(left.story, right.story))
+      .slice(
       0,
       Math.max(0, maxEmailAlerts - emailedCount)
     );
-    for (const candidate of remainingAlerts) {
-      if (candidate.emailSentAt) {
+    for (const candidateAlert of remainingAlerts) {
+      const candidate = candidateAlert.story;
+      if (candidate.emailSentAt && !candidateAlert.forceSend) {
         continue;
       }
 
       const current = (await getStoryById(env.DB, candidate.id)) ?? candidate;
-      if (current.emailSentAt) {
+      if (current.emailSentAt && !candidateAlert.forceSend) {
         continue;
       }
 
@@ -506,7 +512,7 @@ async function fetchResearchSignals(query: string): Promise<RawSignal[]> {
 }
 
 function isRelatedForBrief(story: StoredStory, candidate: StoredStory) {
-  return areSameIssue(story, candidate) || issueSimilarity(story, candidate) >= 0.48 || titleSimilarity(story.title, candidate.title) >= 0.56;
+  return areSameIssue(story, candidate) || issueMatchConfidence(story, candidate) >= 0.58 || titleSimilarity(story.title, candidate.title) >= 0.66;
 }
 
 function hasAny(text: string, terms: string[]) {
@@ -551,8 +557,8 @@ function isFastAlertWorthy(
   return scores.totalScore >= alertThreshold;
 }
 
-function shouldFastAlertRelatedIssue(story: StoredStory, signal: RawSignal, alertThreshold: number) {
-  if (story.emailSentAt) {
+function shouldFastAlertRelatedIssue(story: StoredStory, signal: RawSignal, alertThreshold: number, sourceAdded = false) {
+  if (story.emailSentAt && !sourceAdded) {
     return false;
   }
 
@@ -575,6 +581,10 @@ function prioritizeBriefCandidates(stories: StoredStory[]) {
 
     return dateValue(right.publishedAt || right.detectedAt) - dateValue(left.publishedAt || left.detectedAt);
   });
+}
+
+function compareAlertCandidates(left: StoredStory, right: StoredStory) {
+  return hotIssueScore(right) - hotIssueScore(left) || right.totalScore - left.totalScore || right.viralPotential - left.viralPotential;
 }
 
 function isHotSignal(signal: RawSignal) {
@@ -796,30 +806,33 @@ function parseFeed(xml: string, source: SignalSource): RawSignal[] {
 }
 
 function findRelatedStory(signal: RawSignal, recentStories: StoredStory[]) {
+  const signalLike = signalToStoryLike(signal);
   const titleTokens = signal.title.split(/\s+/).filter((word) => word.length > 3);
-  if (titleTokens.length < 4) {
+  if (titleTokens.length < 2) {
     return null;
   }
 
   const issueMatch = recentStories
-    .slice(0, 140)
-    .find((story) => areSameIssue(story, signalToStoryLike(signal)));
+    .slice(0, 180)
+    .find((story) => areSameIssue(story, signalLike));
   if (issueMatch) {
     return issueMatch;
   }
 
   let best: { story: StoredStory; similarity: number } | null = null;
-  for (const story of recentStories.slice(0, 100)) {
+  for (const story of recentStories.slice(0, 140)) {
+    const issueConfidence = issueMatchConfidence(signalLike, story);
     const similarity = Math.max(
-      titleSimilarity(signal.title, story.title),
-      issueSimilarity(signalToStoryLike(signal), story)
+      titleSimilarity(signal.title, story.title) * 0.82,
+      issueConfidence,
+      issueSimilarity(signalLike, story)
     );
     if (!best || similarity > best.similarity) {
       best = { story, similarity };
     }
   }
 
-  if (best && best.similarity >= 0.48) {
+  if (best && best.similarity >= 0.58) {
     return best.story;
   }
 

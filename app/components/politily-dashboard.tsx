@@ -5,7 +5,10 @@ import type { BiasLean, DashboardState, SignalSource, SourceLane, StoredStory, S
 import { getDemoState } from "../lib/demo-data";
 import {
   canonicalIssueKey,
+  canonicalIssueActors,
   canonicalIssueLabel,
+  canonicalIssuePartLabel,
+  canonicalIssueTopic,
   issueSimilarity as sharedIssueSimilarity,
   issueTokens as sharedIssueTokens,
 } from "../lib/issues";
@@ -181,7 +184,7 @@ export function PolitilyDashboard() {
   const [selectedId, setSelectedId] = useState("");
   const [detailOpen, setDetailOpen] = useState(false);
   const [view, setView] = useState<View>("watch");
-  const [status, setStatus] = useState("Connecting to Politily");
+  const [, setStatus] = useState("Connecting to Politily");
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedTopic, setSelectedTopic] = useState("all");
@@ -211,7 +214,7 @@ export function PolitilyDashboard() {
       if (urlStory && viewFromUrl() === "brief") {
         setView("brief");
       }
-      setStatus(next.demoMode ? "Demo mode: storage not connected" : "Live monitor ready");
+      setStatus(next.demoMode ? "Demo mode: storage not connected" : "Ready");
     } catch (error) {
       const fallback = getDemoState();
       setState(fallback);
@@ -389,8 +392,6 @@ export function PolitilyDashboard() {
   const sourceMix = useMemo(() => buildSourceMix(sources), [sources]);
   const portalNames = useMemo(() => buildPortalNames(enrichedStories), [enrichedStories]);
   const latestRun = state?.runs[0];
-  const lastSuccessfulRun = state?.runs.find((run) => run.status === "complete");
-  const latestSignalAt = newestStoryTime(enrichedStories);
   const triggeredCount = enrichedStories.filter((story) => story.totalScore >= (state?.config.threshold ?? 72)).length;
   const briefedCount = enrichedStories.filter((story) => story.brief).length;
   const tokenTotal = sumBriefTokens(enrichedStories);
@@ -667,6 +668,7 @@ function IssueDetailPage({
 }) {
   const sourceTrail = cluster?.sourceLinks.length ? cluster.sourceLinks : uniqueStoryLinks(story.sourceLinks ?? []);
   const relatedReports = cluster?.stories.filter((item) => item.id !== story.id).slice(0, 8) ?? [];
+  const actors = canonicalIssueActors(story);
 
   return (
     <section aria-label="Issue detail" className="issue-detail-overlay">
@@ -690,6 +692,11 @@ function IssueDetailPage({
             <span className="section-chip">{story.topics[0]?.label || "Politics"}</span>
             <h1>{cluster?.label || story.title}</h1>
             <p>{story.whatHappenedShort}</p>
+            <div className="umbrella-row">
+              <span className="umbrella-pill">Topic bucket: {canonicalIssueTopic(story)}</span>
+              <span className="umbrella-pill subtle">Part/update: {canonicalIssuePartLabel(story)}</span>
+              {actors.length ? <span className="umbrella-pill subtle">Actors: {actors.slice(0, 3).join(", ")}</span> : null}
+            </div>
             <div className="issue-proof-row">
               <strong>{cluster?.sources.length ?? story.sourceNames.length} sources</strong>
               <span>{cluster?.stories.length ?? 1} related report(s)</span>
@@ -1007,6 +1014,7 @@ function IssueClusterCard({
   const sourcePreview = cluster.sources.slice(0, 4);
   const evidence = issueEvidenceLabel(lead, cluster.sources.length);
   const briefState = briefStateLabel(lead);
+  const reportCount = Math.max(cluster.stories.length, cluster.sourceLinks.length, cluster.sources.length);
 
   return (
     <button className={`story-post issue-card ${active ? "active" : ""} ${shouldShowStoryImage(lead) ? "" : "no-media"}`} onClick={() => onSelect(lead.id)} type="button">
@@ -1023,6 +1031,10 @@ function IssueClusterCard({
       {shouldShowStoryImage(lead) ? <StoryImage story={lead} variant="thumb" /> : null}
       <div className="story-post-body">
         <h3>{cluster.label}</h3>
+        <div className="umbrella-row">
+          {reportCount > 1 ? <span className="umbrella-pill">Issue umbrella: {reportCount} reports grouped</span> : null}
+          <span className="umbrella-pill subtle">Part/update: {canonicalIssuePartLabel(lead)}</span>
+        </div>
         <p>{lead.newsSnippet}</p>
         <div className="issue-source-strip">
           {sourcePreview.map((source) => (
@@ -1157,6 +1169,7 @@ function StoryDossier({
 }) {
   const explainer = scoreExplainer(story, scoreFocus);
   const sourceTrail = cluster?.sourceLinks.length ? cluster.sourceLinks : uniqueStoryLinks(story.sourceLinks ?? []);
+  const actors = canonicalIssueActors(story);
 
   return (
     <div>
@@ -1166,6 +1179,11 @@ function StoryDossier({
           <span className="section-chip">Selected issue</span>
           <h2>{cluster?.label || story.title}</h2>
           <p>{story.whatHappenedShort}</p>
+          <div className="umbrella-row">
+            <span className="umbrella-pill">Topic bucket: {canonicalIssueTopic(story)}</span>
+            <span className="umbrella-pill subtle">Part/update: {canonicalIssuePartLabel(story)}</span>
+            {actors.length ? <span className="umbrella-pill subtle">Actors: {actors.slice(0, 3).join(", ")}</span> : null}
+          </div>
           <p className="snippet-copy">{story.newsSnippet}</p>
           {cluster ? (
             <div className="issue-proof-row">
@@ -1668,7 +1686,7 @@ function buildIssueClusters(stories: EnrichedStory[], sortKey: SortKey = "recent
     const key = issueKey(story);
     const match =
       clusters.find((cluster) => cluster.id === key) ||
-      clusters.find((cluster) => storyIssueSimilarity(story, cluster.lead) >= 0.62);
+      clusters.find((cluster) => storyIssueSimilarity(story, cluster.lead) >= 0.58);
 
     if (match) {
       match.stories.push(story);
@@ -1961,68 +1979,12 @@ function formatTokens(value: number) {
   return String(value);
 }
 
-function newestStoryTime(stories: EnrichedStory[]) {
-  const newest = stories.reduce((max, story) => {
-    const value = storyDateValue(story);
-    return Math.max(max, value);
-  }, 0);
-
-  return newest || null;
-}
-
 function storyDateValue(story: StoredStory) {
   return dateValue(story.publishedAt || story.detectedAt);
 }
 
 function storyDisplayTime(story: StoredStory) {
   return story.publishedAt || story.detectedAt;
-}
-
-function nextScanLabel(run?: DashboardState["runs"][number]) {
-  const base = run?.finishedAt || run?.startedAt;
-  if (!base) {
-    return "within 5 min";
-  }
-
-  const parsed = Date.parse(base);
-  if (!Number.isFinite(parsed)) {
-    return "within 5 min";
-  }
-
-  const next = parsed + 5 * 60 * 1000;
-  const diffMinutes = Math.ceil((next - Date.now()) / 60000);
-  if (diffMinutes <= 0) {
-    return "any minute";
-  }
-
-  return `${diffMinutes} min`;
-}
-
-function freshnessLabel(value: number | null) {
-  if (!value) {
-    return "No successful signal yet";
-  }
-
-  const minutes = Math.max(0, Math.round((Date.now() - value) / 60000));
-  if (minutes < 60) {
-    return `Fresh: latest signal ${minutes} min ago`;
-  }
-
-  const hours = Math.round(minutes / 60);
-  if (hours <= 3) {
-    return `Freshness watch: latest signal ${hours}h ago`;
-  }
-
-  return `STALE: latest signal ${hours}h ago`;
-}
-
-function freshnessShortLabel(value: number | null) {
-  if (!value) {
-    return "No signal";
-  }
-
-  const minutes = Math.max(0, Math.round((Date.now() - value) / 60000));
-  return minutes < 60 ? `${minutes}m fresh` : `${Math.round(minutes / 60)}h old`;
 }
 
 function todayDateInput() {

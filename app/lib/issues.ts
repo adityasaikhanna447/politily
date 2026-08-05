@@ -9,9 +9,16 @@ export interface IssueInput {
 
 export interface IssueFrame {
   id: string;
+  umbrellaId: string;
   label: string;
+  partKey: string;
+  partLabel: string;
   primaryEntity: string | null;
+  entities: string[];
   tokens: string[];
+  anchors: string[];
+  topic: string;
+  eventType: string;
 }
 
 const SOURCE_SUFFIX_PATTERN = /\s+-\s+([^-]{2,48})$/;
@@ -22,6 +29,24 @@ const issueRules: Array<{
   any: RegExp[];
   context?: RegExp[];
 }> = [
+  {
+    id: "issue:pok-kashmir-political-tensions",
+    label: "PoK / Kashmir political and security tensions",
+    any: [
+      /\bpok\b/i,
+      /pakistan occupied kashmir/i,
+      /pakistan-occupied kashmir/i,
+      /pak occupied kashmir/i,
+      /azad kashmir/i,
+      /gilgit baltistan/i,
+    ],
+  },
+  {
+    id: "issue:india-pakistan-security-diplomacy",
+    label: "India-Pakistan security and diplomacy tensions",
+    any: [/india pakistan/i, /pakistan india/i, /border tension/i, /line of control/i, /\bloc\b/i, /operation sindoor/i],
+    context: [/kashmir/i, /terror/i, /ceasefire/i, /border/i, /diplomacy/i, /army/i, /security/i, /strike/i, /pahalgam/i],
+  },
   {
     id: "issue:cjp-sansad-chalo",
     label: "CJP / Sansad Chalo protest",
@@ -151,43 +176,129 @@ const sourceWords = new Set([
   "wire",
 ]);
 
+const acronymTokens = new Set([
+  "aap",
+  "bjp",
+  "cbi",
+  "cjp",
+  "dmk",
+  "eci",
+  "inc",
+  "jdu",
+  "jnu",
+  "loc",
+  "mea",
+  "neet",
+  "nia",
+  "nta",
+  "pok",
+  "rbi",
+  "rjd",
+  "rss",
+  "sc",
+  "sp",
+  "tmc",
+  "un",
+]);
+
+const phraseAnchors: Array<{ id: string; any: RegExp[] }> = [
+  { id: "pok", any: [/\bpok\b/i, /pakistan occupied kashmir/i, /azad kashmir/i, /gilgit baltistan/i] },
+  { id: "line-of-control", any: [/\bloc\b/i, /line of control/i] },
+  { id: "operation-sindoor", any: [/operation sindoor/i] },
+  { id: "pahalgam", any: [/pahalgam/i] },
+  { id: "neet-paper-leak", any: [/neet/i, /paper leak/i] },
+  { id: "student-protest", any: [/student protest/i, /sansad chalo/i, /chalo sansad/i, /\bcjp\b/i] },
+  { id: "parliament-session", any: [/monsoon session/i, /lok sabha/i, /rajya sabha/i, /parliament/i] },
+  { id: "waqf", any: [/\bwaqf\b/i] },
+  { id: "delimitation", any: [/delimitation/i] },
+  { id: "bypoll", any: [/bypoll/i, /by election/i, /byelection/i] },
+];
+
+const eventAnchors: Array<{ id: string; any: RegExp[] }> = [
+  { id: "revelation", any: [/exclusive/i, /documents show/i, /reveals/i, /revealed/i, /leak/i, /leaked/i, /exposes/i, /allegation/i, /whistleblower/i] },
+  { id: "protest", any: [/protest/i, /march/i, /demonstration/i, /rally/i, /agitation/i, /strike/i, /unrest/i] },
+  { id: "court-case", any: [/court/i, /petition/i, /plea/i, /hearing/i, /judgment/i, /bail/i, /order/i] },
+  { id: "policy-bill", any: [/bill/i, /policy/i, /scheme/i, /ordinance/i, /regulation/i, /reform/i, /notification/i] },
+  { id: "election", any: [/election/i, /bypoll/i, /candidate/i, /campaign/i, /vote/i, /seat/i] },
+  { id: "security", any: [/security/i, /terror/i, /attack/i, /border/i, /army/i, /police/i, /ceasefire/i, /strike/i] },
+  { id: "diplomacy", any: [/diplomacy/i, /foreign/i, /summit/i, /bilateral/i, /jaishankar/i, /mea/i, /talks/i] },
+  { id: "party-move", any: [/joins/i, /joined/i, /defection/i, /alliance/i, /meeting/i, /appoint/i, /resign/i, /expelled/i] },
+  { id: "corruption", any: [/scam/i, /corruption/i, /probe/i, /investigation/i, /raid/i, /chargesheet/i] },
+  { id: "economy", any: [/budget/i, /inflation/i, /unemployment/i, /jobs/i, /tax/i, /gst/i, /welfare/i] },
+  { id: "social-viral", any: [/viral/i, /trending/i, /hashtag/i, /video/i, /social media/i] },
+];
+
 export function issueFrameFor(input: IssueInput): IssueFrame {
   const rawText = `${input.title} ${input.summary ?? ""} ${(input.tags ?? []).join(" ")}`;
   const normalisedText = normaliseIssueText(rawText);
+  const searchText = `${rawText} ${normalisedText}`;
+  const entities = extractNamedEntities(rawText);
+  const primaryEntity = entities[0] ?? null;
+  const tokens = issueTokens(rawText);
+  const anchors = issueAnchors(rawText);
+  const topic = topicBucket(normalisedText);
+  const eventType = eventBucket(searchText);
+  const partKey = issuePartKey(eventType, anchors, tokens);
+  const partLabel = issuePartLabel(eventType, anchors);
   const rule = issueRules.find((candidate) => {
-    const hasAnchor = candidate.any.some((pattern) => pattern.test(rawText));
+    const hasAnchor = candidate.any.some((pattern) => pattern.test(searchText));
     if (!hasAnchor) return false;
-    return !candidate.context || candidate.context.some((pattern) => pattern.test(rawText));
+    return !candidate.context || candidate.context.some((pattern) => pattern.test(searchText));
   });
 
   if (rule) {
     return {
       id: rule.id,
+      umbrellaId: rule.id,
       label: rule.label,
-      primaryEntity: extractPrimaryEntity(rawText),
-      tokens: issueTokens(rawText),
-    };
-  }
-
-  const primaryEntity = extractPrimaryEntity(rawText);
-  const tokens = issueTokens(rawText);
-  if (primaryEntity) {
-    return {
-      id: `issue:person:${slug(primaryEntity)}`,
-      label: issueLabelFromEntity(primaryEntity, input.title),
+      partKey,
+      partLabel,
       primaryEntity,
+      entities,
       tokens,
+      anchors,
+      topic,
+      eventType,
     };
   }
 
-  const strongTokens = tokens.filter((token) => !weakTokens.has(token));
-  const signature = strongTokens.slice(0, 4).join("-");
-  const topic = topicBucket(normalisedText);
+  if (primaryEntity) {
+    const entityContext = anchors
+      .filter((anchor) => !anchor.includes(slug(primaryEntity)))
+      .filter((anchor) => !weakTokens.has(anchor))
+      .slice(0, 2)
+      .join("-");
+    const umbrellaId = `issue:${topic}:${slug(primaryEntity)}:${entityContext || "general"}`;
+    return {
+      id: umbrellaId,
+      umbrellaId,
+      label: issueLabelFromEntity(primaryEntity, input.title),
+      partKey,
+      partLabel,
+      primaryEntity,
+      entities,
+      tokens,
+      anchors,
+      topic,
+      eventType,
+    };
+  }
+
+  const strongTokens = anchors.length ? anchors : tokens.filter((token) => !weakTokens.has(token));
+  const signature = strongTokens.slice(0, 3).join("-");
+  const umbrellaId = `issue:${topic}:${signature || slug(cleanIssueTitle(input.title))}`;
   return {
-    id: `issue:${topic}:${signature || slug(cleanIssueTitle(input.title))}`,
+    id: umbrellaId,
+    umbrellaId,
     label: cleanIssueTitle(input.title),
+    partKey,
+    partLabel,
     primaryEntity: null,
+    entities,
     tokens,
+    anchors,
+    topic,
+    eventType,
   };
 }
 
@@ -195,8 +306,32 @@ export function canonicalIssueKey(input: IssueInput) {
   return issueFrameFor(input).id;
 }
 
+export function canonicalIssueUmbrellaKey(input: IssueInput) {
+  return issueFrameFor(input).umbrellaId;
+}
+
 export function canonicalIssueLabel(input: IssueInput) {
   return issueFrameFor(input).label;
+}
+
+export function canonicalIssuePartKey(input: IssueInput) {
+  return issueFrameFor(input).partKey;
+}
+
+export function canonicalIssuePartLabel(input: IssueInput) {
+  return issueFrameFor(input).partLabel;
+}
+
+export function canonicalIssueActors(input: IssueInput) {
+  return issueFrameFor(input).entities;
+}
+
+export function canonicalIssueTopic(input: IssueInput) {
+  return issueFrameFor(input).topic;
+}
+
+export function canonicalIssueEventType(input: IssueInput) {
+  return issueFrameFor(input).eventType;
 }
 
 export function areSameIssue(
@@ -210,7 +345,7 @@ export function areSameIssue(
     return true;
   }
 
-  if (leftFrame.primaryEntity && leftFrame.primaryEntity === rightFrame.primaryEntity) {
+  if (issueMatchConfidence(left, right) >= 0.72) {
     return true;
   }
 
@@ -226,22 +361,48 @@ export function issueSimilarity(
   left: Pick<RawSignal | StoredStory, "title" | "summary" | "sourceName"> & { tags?: string[] },
   right: Pick<RawSignal | StoredStory, "title" | "summary" | "sourceName"> & { tags?: string[] }
 ) {
+  return issueMatchConfidence(left, right);
+}
+
+export function issueMatchConfidence(
+  left: Pick<RawSignal | StoredStory, "title" | "summary" | "sourceName"> & { tags?: string[] },
+  right: Pick<RawSignal | StoredStory, "title" | "summary" | "sourceName"> & { tags?: string[] }
+) {
   const leftFrame = issueFrameFor(left);
   const rightFrame = issueFrameFor(right);
+  if (leftFrame.umbrellaId === rightFrame.umbrellaId) {
+    return 1;
+  }
+
   if (leftFrame.id === rightFrame.id) {
     return 1;
   }
 
-  const leftTokens = new Set(leftFrame.tokens.filter((token) => !weakTokens.has(token)));
-  const rightTokens = new Set(rightFrame.tokens.filter((token) => !weakTokens.has(token)));
-  if (!leftTokens.size || !rightTokens.size) {
-    return 0;
-  }
+  const leftTokens = uniqueFrameSignals(leftFrame);
+  const rightTokens = uniqueFrameSignals(rightFrame);
 
-  const shared = Array.from(leftTokens).filter((token) => rightTokens.has(token)).length;
-  const entityBoost =
-    leftFrame.primaryEntity && leftFrame.primaryEntity === rightFrame.primaryEntity ? 0.34 : 0;
-  return Math.min(1, shared / Math.max(leftTokens.size, rightTokens.size) + entityBoost);
+  const sharedTokens = Array.from(leftTokens).filter((token) => rightTokens.has(token));
+  const shared = sharedTokens.length;
+  const sharedEntities = overlapCount(
+    leftFrame.entities.map(slug),
+    rightFrame.entities.map(slug)
+  );
+  const sameTopic = leftFrame.topic === rightFrame.topic;
+  const sameEvent = leftFrame.eventType !== "general" && leftFrame.eventType === rightFrame.eventType;
+  const tokenScore = leftTokens.size && rightTokens.size ? shared / Math.max(leftTokens.size, rightTokens.size) : 0;
+  const entityScore = Math.min(1, sharedEntities / Math.max(1, Math.min(leftFrame.entities.length || 1, rightFrame.entities.length || 1)));
+  const phraseBoost = sharedTokens.some((token) => token.includes("-")) ? 0.12 : 0;
+  const acronymBoost = sharedTokens.some((token) => acronymTokens.has(token)) ? 0.1 : 0;
+
+  return Math.min(
+    1,
+    tokenScore * 0.42 +
+      entityScore * 0.3 +
+      (sameTopic ? 0.13 : 0) +
+      (sameEvent ? 0.15 : 0) +
+      phraseBoost +
+      acronymBoost
+  );
 }
 
 export function issueTokens(value: string) {
@@ -256,11 +417,22 @@ export function issueTokens(value: string) {
     new Set(
       cleaned
         .split(/\s+/)
-        .filter((token) => token.length > 3)
+        .filter((token) => token.length > 3 || acronymTokens.has(token))
         .filter((token) => !stopWords.has(token))
         .filter((token) => !sourceWords.has(token))
     )
   ).slice(0, 12);
+}
+
+export function issueAnchors(value: string) {
+  const text = normaliseIssueText(value);
+  const entities = extractNamedEntities(value).map(slug);
+  const phrases = phraseAnchors
+    .filter((anchor) => anchor.any.some((pattern) => pattern.test(text)))
+    .map((anchor) => anchor.id);
+  const tokens = issueTokens(text).filter((token) => !weakTokens.has(token));
+  const tokenPhrases = issueTokenPhrases(tokens);
+  return Array.from(new Set([...phrases, ...entities, ...tokenPhrases, ...tokens])).slice(0, 18);
 }
 
 export function cleanIssueTitle(value: string) {
@@ -273,13 +445,50 @@ function issueLabelFromEntity(entity: string, title: string) {
   return titleCase(`${entity}${context ? ` and ${context}` : ""}`).slice(0, 140);
 }
 
+function issuePartKey(eventType: string, anchors: string[], tokens: string[]) {
+  const signal = [
+    eventType,
+    ...anchors.filter((anchor) => anchor !== eventType && !anchor.startsWith("topic:")).slice(0, 2),
+    ...tokens.filter((token) => !weakTokens.has(token)).slice(0, 1),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return slug(signal || eventType || "latest-development");
+}
+
+function issuePartLabel(eventType: string, anchors: string[]) {
+  const eventLabels: Record<string, string> = {
+    revelation: "New revelation",
+    protest: "Protest/mobilisation",
+    "court-case": "Court/legal turn",
+    "policy-bill": "Policy/bill move",
+    election: "Election angle",
+    security: "Security angle",
+    diplomacy: "Diplomacy angle",
+    "party-move": "Party/power move",
+    corruption: "Investigation/accountability",
+    economy: "Economy/public impact",
+    "social-viral": "Social/viral signal",
+    general: "Latest development",
+  };
+  const anchorText = anchors
+    .filter((anchor) => anchor !== eventType)
+    .slice(0, 2)
+    .map(titleCaseAnchor)
+    .join(" + ");
+  return `${eventLabels[eventType] ?? "Latest development"}${anchorText ? `: ${anchorText}` : ""}`;
+}
+
 function sharedStrongTokens(leftTokens: string[], rightTokens: string[]) {
   const right = new Set(rightTokens.filter((token) => !weakTokens.has(token)));
   return leftTokens.filter((token) => !weakTokens.has(token) && right.has(token));
 }
 
-function extractPrimaryEntity(value: string) {
+function extractNamedEntities(value: string) {
   const explicit = [
+    "Pakistan Occupied Kashmir",
+    "Pakistan-occupied Kashmir",
+    "PoK",
     "Dharmendra Pradhan",
     "Prahlad Joshi",
     "Rahul Gandhi",
@@ -289,10 +498,7 @@ function extractPrimaryEntity(value: string) {
     "MK Stalin",
     "Om Birla",
     "Prashant Kishor",
-  ].find((name) => new RegExp(`\\b${escapeRegex(name).replace(/\s+/g, "\\s+")}\\b`, "i").test(value));
-  if (explicit) {
-    return explicit.replace(/^M K$/, "MK");
-  }
+  ].filter((name) => new RegExp(`\\b${escapeRegex(name).replace(/\s+/g, "\\s+")}\\b`, "i").test(value));
 
   const candidates = Array.from(
     cleanEmailLikeText(removeSourceSuffix(value)).matchAll(
@@ -311,10 +517,17 @@ function extractPrimaryEntity(value: string) {
       return true;
     });
 
-  return candidates[0] ?? null;
+  return Array.from(
+    new Set(
+      [...explicit, ...candidates]
+        .map((candidate) => candidate.replace(/^M K$/, "MK").replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 5);
 }
 
 function topicBucket(value: string) {
+  if (/pok|pakistan occupied kashmir|kashmir|gilgit|baltistan|line of control|operation sindoor|pahalgam/.test(value)) return "geopolitics";
   if (/bypoll|election|poll|candidate|constituency/.test(value)) return "election";
   if (/protest|student|neet|paper leak|police|march/.test(value)) return "protest";
   if (/parliament|lok sabha|rajya sabha|bill|speaker|house/.test(value)) return "parliament";
@@ -323,6 +536,41 @@ function topicBucket(value: string) {
   if (/china|pakistan|border|foreign|jaishankar|diplomacy/.test(value)) return "geopolitics";
   if (/bjp|congress|aap|tmc|dmk|rjd|jdu|opposition|alliance/.test(value)) return "party";
   return "politics";
+}
+
+function eventBucket(value: string) {
+  const normalised = normaliseIssueText(value);
+  return eventAnchors.find((event) => event.any.some((pattern) => pattern.test(normalised)))?.id ?? "general";
+}
+
+function issueTokenPhrases(tokens: string[]) {
+  const phrases: string[] = [];
+  for (let index = 0; index < tokens.length - 1; index += 1) {
+    const left = tokens[index];
+    const right = tokens[index + 1];
+    if (!left || !right || weakTokens.has(left) || weakTokens.has(right)) {
+      continue;
+    }
+    phrases.push(`${left}-${right}`);
+  }
+  return phrases.slice(0, 5);
+}
+
+function uniqueFrameSignals(frame: IssueFrame) {
+  return new Set(
+    [
+      ...frame.anchors,
+      ...frame.tokens.filter((token) => !weakTokens.has(token)),
+      ...frame.entities.map(slug),
+      frame.eventType !== "general" ? `event:${frame.eventType}` : "",
+      `topic:${frame.topic}`,
+    ].filter(Boolean)
+  );
+}
+
+function overlapCount(left: string[], right: string[]) {
+  const rightSet = new Set(right);
+  return left.filter((value) => rightSet.has(value)).length;
 }
 
 function textFor(input: IssueInput) {
@@ -364,15 +612,31 @@ function decodeEntities(value: string) {
 }
 
 function normaliseIssueText(value: string) {
-  return cleanEmailLikeText(value)
+  return normaliseAliases(cleanEmailLikeText(value))
     .toLowerCase()
     .replace(/https?:\/\/\S+/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
 
+function normaliseAliases(value: string) {
+  return value
+    .replace(/\bp[\s.\-]*o[\s.\-]*k\b/gi, " pok pakistan occupied kashmir ")
+    .replace(/\bpak(?:istan)?[\s-]*occupied\s+kashmir\b/gi, " pok pakistan occupied kashmir ")
+    .replace(/\bazad\s+kashmir\b/gi, " pok pakistan occupied kashmir ")
+    .replace(/\bgilgit[\s-]*baltistan\b/gi, " pok gilgit baltistan ")
+    .replace(/\bj\s*&\s*k\b/gi, " jammu kashmir ")
+    .replace(/\bjammu\s+and\s+kashmir\b/gi, " jammu kashmir ")
+    .replace(/\bline\s+of\s+control\b/gi, " loc line of control ")
+    .replace(/\bby[-\s]?election\b/gi, " bypoll ");
+}
+
 function titleCase(value: string) {
   return value.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
+function titleCaseAnchor(value: string) {
+  return titleCase(value.replace(/-/g, " "));
 }
 
 function slug(value: string) {
