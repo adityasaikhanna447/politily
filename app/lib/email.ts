@@ -29,17 +29,40 @@ interface DigestIssue {
 
 const DEFAULT_APP_BASE_URL = "https://politily.adityakhanna-tcc.workers.dev/";
 const MAX_DIGEST_ISSUES = 50;
+const DEFAULT_URGENT_SCORE = 82;
+
+export function getEmailSettings(env: RuntimeEnv) {
+  const apiKey = firstEnv(env.RESEND_API_KEY);
+  const to = firstEnv(env.ALERT_EMAIL, env.POLITILY_ALERT_EMAIL, env.EMAIL_TO);
+  const from = firstEnv(env.ALERT_FROM_EMAIL, env.ALERT_FROM_MAIL, env.POLITILY_ALERT_FROM_EMAIL, env.RESEND_FROM_EMAIL);
+  const missing = [
+    apiKey ? "" : "RESEND_API_KEY",
+    to ? "" : "ALERT_EMAIL",
+    from ? "" : "ALERT_FROM_EMAIL",
+  ].filter(Boolean);
+
+  return {
+    apiKey,
+    to,
+    from,
+    ready: Boolean(apiKey && to && from),
+    missing,
+    message: missing.length
+      ? `Missing email setting(s): ${missing.join(", ")}. Accepted aliases: POLITILY_ALERT_EMAIL/EMAIL_TO and ALERT_FROM_MAIL/POLITILY_ALERT_FROM_EMAIL/RESEND_FROM_EMAIL.`
+      : "Email settings ready.",
+  };
+}
 
 export async function sendBriefEmail(
   env: RuntimeEnv,
   story: StoredStory,
   brief: PolitilyBrief
 ) {
-  if (!env.RESEND_API_KEY || !env.ALERT_EMAIL || !env.ALERT_FROM_EMAIL) {
+  const emailSettings = getEmailSettings(env);
+  if (!emailSettings.ready) {
     return {
       sent: false,
-      message:
-        "Email skipped. Set RESEND_API_KEY, ALERT_EMAIL, and ALERT_FROM_EMAIL to enable alerts.",
+      message: `Email skipped. ${emailSettings.message}`,
     };
   }
 
@@ -48,12 +71,12 @@ export async function sendBriefEmail(
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      Authorization: `Bearer ${emailSettings.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: env.ALERT_FROM_EMAIL,
-      to: [env.ALERT_EMAIL],
+      from: emailSettings.from,
+      to: [emailSettings.to],
       subject: `[Politily ${story.totalScore}] ${story.title}`,
       html: buildHtml(story, brief, storyLink),
       text: buildText(story, brief, storyLink),
@@ -71,11 +94,11 @@ export async function sendBriefEmail(
 }
 
 export async function sendSignalEmail(env: RuntimeEnv, story: StoredStory) {
-  if (!env.RESEND_API_KEY || !env.ALERT_EMAIL || !env.ALERT_FROM_EMAIL) {
+  const emailSettings = getEmailSettings(env);
+  if (!emailSettings.ready) {
     return {
       sent: false,
-      message:
-        "Signal email skipped. Set RESEND_API_KEY, ALERT_EMAIL, and ALERT_FROM_EMAIL to enable alerts.",
+      message: `Signal email skipped. ${emailSettings.message}`,
     };
   }
 
@@ -92,12 +115,12 @@ export async function sendSignalEmail(env: RuntimeEnv, story: StoredStory) {
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      Authorization: `Bearer ${emailSettings.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: env.ALERT_FROM_EMAIL,
-      to: [env.ALERT_EMAIL],
+      from: emailSettings.from,
+      to: [emailSettings.to],
       subject: `[Politily Umbrella ${story.totalScore}] ${cleanEmailText(issueTitle)} - ${cleanEmailText(partLabel)} (${sources.length} sources)`,
       html: buildSignalHtml(story, storyLink, briefLink, sources, issueTitle, partLabel, actors),
       text: buildSignalText(story, storyLink, briefLink, sources, issueTitle, partLabel, actors),
@@ -115,11 +138,11 @@ export async function sendSignalEmail(env: RuntimeEnv, story: StoredStory) {
 }
 
 export async function sendTestEmail(env: RuntimeEnv) {
-  if (!env.RESEND_API_KEY || !env.ALERT_EMAIL || !env.ALERT_FROM_EMAIL) {
+  const emailSettings = getEmailSettings(env);
+  if (!emailSettings.ready) {
     return {
       sent: false,
-      message:
-        "Email test skipped. Set RESEND_API_KEY, ALERT_EMAIL, and ALERT_FROM_EMAIL first.",
+      message: `Email test skipped. ${emailSettings.message}`,
     };
   }
 
@@ -127,12 +150,12 @@ export async function sendTestEmail(env: RuntimeEnv) {
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      Authorization: `Bearer ${emailSettings.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: env.ALERT_FROM_EMAIL,
-      to: [env.ALERT_EMAIL],
+      from: emailSettings.from,
+      to: [emailSettings.to],
       subject: "[Politily] Test email notification",
       html: `<!doctype html><html><body style="font-family:Arial,sans-serif;background:#080b0d;color:#f4efe6;margin:0;padding:28px;"><main style="max-width:620px;margin:0 auto;"><p style="letter-spacing:.12em;text-transform:uppercase;color:#9aa4a8;font-size:12px;">Politily email test</p><h1 style="margin:0 0 12px;">Resend is connected</h1><p>This confirms Politily can send email alerts from Cloudflare Workers through Resend.</p><p><a href="${escapeHtml(appLink)}" style="color:#8dbdff;">Open Politily</a></p></main></body></html>`,
       text: `Politily email test\n\nResend is connected. This confirms Politily can send email alerts from Cloudflare Workers through Resend.\n\nOpen: ${appLink}`,
@@ -154,11 +177,11 @@ export async function sendStrategicDigestEmail(
   stories: StoredStory[],
   options: DigestOptions
 ) {
-  if (!env.RESEND_API_KEY || !env.ALERT_EMAIL || !env.ALERT_FROM_EMAIL) {
+  const emailSettings = getEmailSettings(env);
+  if (!emailSettings.ready) {
     return {
       sent: false,
-      message:
-        "Digest skipped. Set RESEND_API_KEY, ALERT_EMAIL, and ALERT_FROM_EMAIL first.",
+      message: `Digest skipped. ${emailSettings.message}`,
     };
   }
 
@@ -171,12 +194,12 @@ export async function sendStrategicDigestEmail(
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      Authorization: `Bearer ${emailSettings.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: env.ALERT_FROM_EMAIL,
-      to: [env.ALERT_EMAIL],
+      from: emailSettings.from,
+      to: [emailSettings.to],
       subject,
       html: buildDigestHtml(issues, stories, options, sourceCount, appLink),
       text: buildDigestText(issues, stories, options, sourceCount, appLink),
@@ -324,7 +347,7 @@ function buildDigestHtml(
   sourceCount: number,
   appLink: string
 ) {
-  const urgentCount = issues.filter((issue) => issue.score >= 85).length;
+  const urgentCount = issues.filter((issue) => issue.score >= DEFAULT_URGENT_SCORE).length;
   const agencyCount = issues.filter(hasAgencySource).length;
   const parliamentCount = issues.filter((issue) => topicForStory(issue.lead) === "Parliament").length;
   const issueHtml = issues.length
@@ -487,7 +510,7 @@ function buildDigestText(
     `Issues: ${issues.length}`,
     `Reports: ${stories.length}`,
     `Sources: ${sourceCount}`,
-    `Urgent >=85: ${issues.filter((issue) => issue.score >= 85).length}`,
+    `Urgent >=${DEFAULT_URGENT_SCORE}: ${issues.filter((issue) => issue.score >= DEFAULT_URGENT_SCORE).length}`,
     `Agency-backed issues: ${issues.filter(hasAgencySource).length}`,
     "",
     "This digest uses stored open-source signals only. Gemini tokens are used only when you generate a deep brief.",
@@ -872,6 +895,10 @@ function escapeHtml(value: string) {
 
 function appBaseUrl(env: RuntimeEnv) {
   return (env.APP_BASE_URL || DEFAULT_APP_BASE_URL).replace(/\/$/, "");
+}
+
+function firstEnv(...values: Array<string | undefined>) {
+  return values.map((value) => value?.trim()).find(Boolean) || "";
 }
 
 function issueLink(env: RuntimeEnv, storyId: string) {

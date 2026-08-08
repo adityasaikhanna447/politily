@@ -78,9 +78,21 @@ const schemaStatements = [
     emailed_count INTEGER NOT NULL DEFAULT 0,
     message TEXT NOT NULL DEFAULT ''
   )`,
+  `CREATE TABLE IF NOT EXISTS email_digests (
+    id TEXT PRIMARY KEY,
+    digest_key TEXT NOT NULL UNIQUE,
+    slot TEXT NOT NULL,
+    sent_at TEXT NOT NULL,
+    start_iso TEXT NOT NULL,
+    end_iso TEXT NOT NULL,
+    issue_count INTEGER NOT NULL DEFAULT 0,
+    story_count INTEGER NOT NULL DEFAULT 0,
+    message TEXT NOT NULL DEFAULT ''
+  )`,
   `CREATE INDEX IF NOT EXISTS stories_total_score_idx ON stories (total_score DESC)`,
   `CREATE INDEX IF NOT EXISTS stories_detected_at_idx ON stories (detected_at DESC)`,
   `CREATE INDEX IF NOT EXISTS story_sources_story_id_idx ON story_sources (story_id)`,
+  `CREATE INDEX IF NOT EXISTS email_digests_sent_at_idx ON email_digests (sent_at DESC)`,
 ];
 
 const legacySourceIdsToPause = [
@@ -282,6 +294,47 @@ export async function finishRun(
     .run();
 
   return finished;
+}
+
+export async function getDigestRunByKey(db: D1Database, digestKey: string) {
+  await ensureDatabase(db);
+  return db
+    .prepare("SELECT id, digest_key, slot, sent_at, message FROM email_digests WHERE digest_key = ? LIMIT 1")
+    .bind(digestKey)
+    .first<Row>();
+}
+
+export async function recordDigestRun(
+  db: D1Database,
+  digest: {
+    digestKey: string;
+    slot: string;
+    startIso: string;
+    endIso: string;
+    issueCount: number;
+    storyCount: number;
+    message: string;
+  }
+) {
+  await ensureDatabase(db);
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO email_digests
+      (id, digest_key, slot, sent_at, start_iso, end_iso, issue_count, story_count, message)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      newId("digest"),
+      digest.digestKey,
+      digest.slot,
+      new Date().toISOString(),
+      digest.startIso,
+      digest.endIso,
+      digest.issueCount,
+      digest.storyCount,
+      digest.message
+    )
+    .run();
 }
 
 export async function getStoryByFingerprint(

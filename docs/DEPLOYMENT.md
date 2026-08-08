@@ -40,9 +40,9 @@ That checks sources every 2 minutes. Scanning RSS/GDELT/open pages uses 0 Gemini
 For early-access free-tier scans, start with:
 
 ```txt
-POLITILY_MAX_SOURCES_PER_RUN=32
+POLITILY_MAX_SOURCES_PER_RUN=36
 POLITILY_FETCH_TIMEOUT_MS=5000
-POLITILY_ALERT_MIN_SCORE=85
+POLITILY_ALERT_MIN_SCORE=82
 POLITILY_MAX_EMAIL_ALERTS_PER_RUN=4
 POLITILY_MAX_DEEP_BRIEFS_PER_RUN=0
 ```
@@ -50,6 +50,6 @@ POLITILY_MAX_DEEP_BRIEFS_PER_RUN=0
 ## Email Rhythm
 
 - Scanner cron: `*/2 * * * *`
-- Scheduled digest cron: `30 9,15 * * *`
+- Scheduled digest cron: optional `30 9,15 * * *`. Every scheduled scan now checks due digest slots too.
 - Digest timing in India: 3 PM and 9 PM IST
-- Instant alerts: only issues at `POLITILY_ALERT_MIN_SCORE=85` or above
+- Instant alerts: only issues at `POLITILY_ALERT_MIN_SCORE=82` or above

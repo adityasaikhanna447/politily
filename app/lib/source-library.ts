@@ -30,6 +30,91 @@ const indiaCoreTerms =
 
 export const DEFAULT_SOURCES: SignalSource[] = [
   {
+    id: "fast-google-india-politics-2h",
+    name: "Fast India Politics 2h",
+    type: "rss",
+    url: googleNewsRss(
+      '(India OR Delhi) (politics OR government OR minister OR parliament OR election OR court OR protest OR corruption OR policy) when:2h'
+    ),
+    region: "india",
+    category: "Fast lane / Google News politics",
+    biasLean: "unknown",
+    verificationMethod:
+      "Fast lane: headline discovery from Google News RSS. Verify source trail, primary records, and original publisher before scripting.",
+    language: "English",
+    sourceLane: "portal",
+    priority: 148,
+    active: true,
+  },
+  {
+    id: "fast-google-parliament-court-2h",
+    name: "Fast Parliament + Courts 2h",
+    type: "rss",
+    url: googleNewsRss(
+      '(Parliament OR "Lok Sabha" OR "Rajya Sabha" OR "Supreme Court" OR "High Court" OR bill OR ordinance OR petition OR hearing) India when:2h'
+    ),
+    region: "india",
+    category: "Fast lane / institutions",
+    biasLean: "unknown",
+    verificationMethod:
+      "Institution fast lane: verify against court orders, Lok Sabha/Rajya Sabha records, bill text, PRS, or official releases.",
+    language: "English",
+    sourceLane: "portal",
+    priority: 147,
+    active: true,
+  },
+  {
+    id: "fast-google-party-election-2h",
+    name: "Fast Party + Election 2h",
+    type: "rss",
+    url: googleNewsRss(
+      '(BJP OR Congress OR AAP OR TMC OR DMK OR RJD OR JDU OR SP OR "INDIA bloc" OR opposition OR bypoll OR election OR candidate OR alliance) India when:2h'
+    ),
+    region: "india",
+    category: "Fast lane / party election",
+    biasLean: "unknown",
+    verificationMethod:
+      "Party/election fast lane: verify candidate, seat, alliance, and quote attribution with at least one primary or agency source.",
+    language: "English",
+    sourceLane: "portal",
+    priority: 146,
+    active: true,
+  },
+  {
+    id: "fast-google-protest-accountability-2h",
+    name: "Fast Protest + Accountability 2h",
+    type: "rss",
+    url: googleNewsRss(
+      '(protest OR students OR arrest OR detained OR "paper leak" OR NEET OR unemployment OR corruption OR scam OR resignation OR censorship) India when:2h'
+    ),
+    region: "india",
+    category: "Fast lane / protest accountability",
+    biasLean: "unknown",
+    verificationMethod:
+      "Protest/accountability fast lane: verify original event, police/administration response, court record, and affected-group claims.",
+    language: "English",
+    sourceLane: "portal",
+    priority: 145,
+    active: true,
+  },
+  {
+    id: "fast-google-ani-pti-uni-2h",
+    name: "Fast ANI/PTI/UNI Wire 2h",
+    type: "rss",
+    url: googleNewsRss(
+      '(ANI OR PTI OR UNI) (India politics OR parliament OR minister OR election OR court OR government OR opposition) when:2h'
+    ),
+    region: "india",
+    category: "Fast lane / agency wires",
+    biasLean: "unknown",
+    verificationMethod:
+      "Agency fast lane: use for speed; treat syndicated repeats as one wire origin until non-wire/primary corroboration appears.",
+    language: "English",
+    sourceLane: "agency",
+    priority: 144,
+    active: true,
+  },
+  {
     id: "fresh-gdelt-india-politics-24h",
     name: "Fresh 24h India Politics",
     type: "gdelt",

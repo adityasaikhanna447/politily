@@ -207,14 +207,21 @@ export function scoreSignal(signal: RawSignal, recentStories: StoredStory[]): St
   const sentimentScore = clamp(36 + sentimentHits.length * 10 + Math.round(viralPotential * 0.18) + velocity);
   const hotTopicBoost = hotTopicSignalBoost(text);
   const tags = inferTags(text);
+  const sourceAuthority = sourceAuthorityScore(signal);
+  const domesticFloor = isDomesticPoliticalSignal(text, tags) ? 56 : geopoliticalRelevance;
+  const geoOrDomesticRelevance = Math.max(geopoliticalRelevance, domesticFloor);
+  const creatorUrgencyBoost = creatorUrgencySignalBoost(text, signal, tags);
 
   const totalScore = clamp(
     Math.round(
-      noveltyScore * 0.24 +
-        politicalWeight * 0.31 +
-        geopoliticalRelevance * 0.2 +
+      noveltyScore * 0.18 +
+        politicalWeight * 0.32 +
+        geoOrDomesticRelevance * 0.1 +
         viralPotential * 0.25 +
-        hotTopicBoost
+        sentimentScore * 0.08 +
+        sourceAuthority * 0.07 +
+        hotTopicBoost +
+        creatorUrgencyBoost
     )
   );
   const scoringBreakdown = {
@@ -233,7 +240,7 @@ export function scoreSignal(signal: RawSignal, recentStories: StoredStory[]): St
       ? `Freshness boost ${velocity}: source timestamp is recent or breaking`
       : "No freshness boost from timestamp",
     sourceSignal: `Source priority ${signal.sourcePriority}; lane ${signal.sourceLane ?? "portal"}; bias ${signal.biasLean ?? "unknown"}`,
-    formula: "total = novelty 24% + political 31% + geo 20% + viral 25% + hot-topic boost",
+    formula: "Indian audience score = novelty 18% + political 32% + geo/domestic relevance 10% + viral 25% + sentiment 8% + source authority 7% + creator urgency boosts",
   };
 
   return {
@@ -355,6 +362,53 @@ function hotTopicSignalBoost(text: string) {
   }
 
   return 0;
+}
+
+function sourceAuthorityScore(signal: RawSignal) {
+  const lane = signal.sourceLane ?? "portal";
+  const source = `${signal.sourceName} ${signal.sourceId} ${signal.url}`.toLowerCase();
+  if (lane === "official" || /\.gov\.in|prsindia|loksabha|rajyasabha|supremecourt|eci\.gov/.test(source)) return 92;
+  if (lane === "agency" || /ani|pti|uni|reuters|associated press|afp/.test(source)) return 86;
+  if (lane === "factcheck") return 82;
+  if (lane === "regional") return 72;
+  if (lane === "social") return 48;
+  if (lane === "research") return 70;
+  return Math.max(58, Math.min(84, signal.sourcePriority));
+}
+
+function isDomesticPoliticalSignal(text: string, tags: string[]) {
+  return (
+    tags.some((tag) =>
+      [
+        "india",
+        "election",
+        "bypoll",
+        "governance",
+        "courts",
+        "youth-protest",
+        "party-bjp",
+        "party-congress",
+        "party-regional",
+        "opposition-india-bloc",
+        "economy-policy",
+        "party-politics",
+        "public-order",
+      ].includes(tag)
+    ) ||
+    /india|bjp|congress|aap|dmk|tmc|rjd|jdu|lok sabha|rajya sabha|parliament|minister|court|election|bypoll|protest/.test(text)
+  );
+}
+
+function creatorUrgencySignalBoost(text: string, signal: RawSignal, tags: string[]) {
+  let boost = 0;
+  if (/exclusive|documents show|reveals|revealed|leak|leaked|probe|investigation|scam|corruption/.test(text)) boost += 5;
+  if (/supreme court|high court|court|plea|hearing|order|judgment|constitution/.test(text)) boost += 4;
+  if (/parliament|lok sabha|rajya sabha|bill|speaker|session|ordinance/.test(text)) boost += 4;
+  if (/protest|march|detained|arrest|lathi charge|students|youth|public order/.test(text)) boost += 4;
+  if (/election|bypoll|by-election|candidate|seat|campaign|alliance/.test(text)) boost += 4;
+  if (/resign|resignation|minister|chief minister|prime minister|opposition|bjp|congress|aap|dmk|tmc|rjd|jdu/.test(text)) boost += 3;
+  if ((signal.sourceLane === "agency" || signal.sourceLane === "official") && tags.some((tag) => tag !== "india")) boost += 2;
+  return Math.min(14, boost);
 }
 
 function uniqueStrings(values: string[]) {

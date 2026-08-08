@@ -1439,12 +1439,12 @@ function SetupDesk({
       <div className="panel">
         <PanelTitle title="System status" />
         <div className="strategy-stack">
-          <StrategyRow label="D1 database" value={state.config.storageReady ? "Ready. 4 tables is correct." : "Missing."} />
+          <StrategyRow label="D1 database" value={state.config.storageReady ? "Ready. Core tables plus digest log are active." : "Missing."} />
           <StrategyRow label="Gemini" value={state.config.geminiReady ? `Ready: ${state.config.model}` : "Missing API key."} />
           <StrategyRow label="Token policy" value={`Scanning uses RSS/GDELT/open pages: 0 Gemini tokens. Generated briefs recorded so far: ${formatTokens(tokenTotal)} tokens.`} />
           <StrategyRow label="Email" value={state.config.emailReady ? "Ready." : "Pending. Resend domain/API still needed."} />
           <StrategyRow label="Auto alerts" value={`Fast signal emails at ${state.config.alertThreshold}/100. Deep brief trigger remains ${state.config.threshold}/100.`} />
-          <StrategyRow label="Cron" value="Use */2 * * * * for early scans plus 30 9,15 * * * for 3 PM and 9 PM IST media reports. Cloudflare UI shows UTC, app shows IST." />
+          <StrategyRow label="Cron" value="Use */2 * * * * for early scans. Optional digest cron: 30 9,15 * * *. Every scan now checks due 3 PM/9 PM IST digest slots once." />
         </div>
       </div>
       <div className="panel">

@@ -30,7 +30,12 @@ export interface RuntimeEnv {
   GEMINI_MODEL?: string;
   RESEND_API_KEY?: string;
   ALERT_EMAIL?: string;
+  POLITILY_ALERT_EMAIL?: string;
+  EMAIL_TO?: string;
   ALERT_FROM_EMAIL?: string;
+  ALERT_FROM_MAIL?: string;
+  POLITILY_ALERT_FROM_EMAIL?: string;
+  RESEND_FROM_EMAIL?: string;
   APP_BASE_URL?: string;
   POLITILY_SCORE_THRESHOLD?: string;
   POLITILY_ALERT_MIN_SCORE?: string;

@@ -35,12 +35,15 @@ GEMINI_MODEL=gemini-3.5-flash
 RESEND_API_KEY=
 ALERT_EMAIL=
 ALERT_FROM_EMAIL=
+# Accepted aliases:
+# POLITILY_ALERT_EMAIL=
+# ALERT_FROM_MAIL=
 APP_BASE_URL=
 POLITILY_SCORE_THRESHOLD=72
 POLITILY_MAX_DEEP_BRIEFS_PER_RUN=0
-POLITILY_ALERT_MIN_SCORE=85
+POLITILY_ALERT_MIN_SCORE=82
 POLITILY_MAX_EMAIL_ALERTS_PER_RUN=4
-POLITILY_MAX_SOURCES_PER_RUN=32
+POLITILY_MAX_SOURCES_PER_RUN=36
 POLITILY_FETCH_TIMEOUT_MS=5000
 POLITILY_MIN_STORY_DATE=2026-07-20T00:00:00+05:30
 POLITILY_MAX_MEDIA_FETCHES_PER_RUN=10
@@ -64,8 +67,8 @@ Never commit `.env` files.
 ## Email Rhythm
 
 - Source scan: every 2 minutes.
-- Scheduled digest: two table reports per day, 3:00 PM IST and 9:00 PM IST.
-- Instant alerts: only new or strengthened issue umbrellas scoring `85/100` or higher.
+- Scheduled digest: two table reports per day, 3:00 PM IST and 9:00 PM IST. Any running scan cron checks and sends due digest slots once, so digest delivery no longer depends on Cloudflare passing one exact cron string.
+- Instant alerts: only new or strengthened issue umbrellas scoring `82/100` or higher. Use 82 for urgent individual creator alerts; 72 remains the dashboard/watch threshold.
 - Gemini tokens are not used for scanning or scheduled digests; they are used only when a deep brief/script is generated.
 
 ## License

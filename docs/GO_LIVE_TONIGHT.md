@@ -70,10 +70,10 @@ ALERT_EMAIL=your_inbox@example.com
 ALERT_FROM_EMAIL=Politily <alerts@yourdomain.com>
 APP_BASE_URL=https://your-worker-url.workers.dev
 POLITILY_SCORE_THRESHOLD=72
-POLITILY_ALERT_MIN_SCORE=85
+POLITILY_ALERT_MIN_SCORE=82
 POLITILY_MAX_DEEP_BRIEFS_PER_RUN=0
 POLITILY_MAX_EMAIL_ALERTS_PER_RUN=4
-POLITILY_MAX_SOURCES_PER_RUN=18
+POLITILY_MAX_SOURCES_PER_RUN=36
 POLITILY_FETCH_TIMEOUT_MS=5000
 POLITILY_MIN_STORY_DATE=2026-07-20T00:00:00+05:30
 POLITILY_MAX_MEDIA_FETCHES_PER_RUN=6
@@ -119,14 +119,15 @@ Use these cron triggers:
 ```
 
 The first cron scans every 2 minutes. The second sends scheduled digest emails at 3:00 PM and 9:00 PM IST.
+The app now also checks digest slots after every scheduled scan, so the 3 PM and 9 PM reports can still send even if only the scan cron is configured.
 
 Instant alert rule:
 
 ```txt
-POLITILY_ALERT_MIN_SCORE=85
+POLITILY_ALERT_MIN_SCORE=82
 ```
 
-Any new or strengthened issue at 85/100 or higher can email immediately.
+Any new or strengthened issue at 82/100 or higher can email immediately.
 
 ## Test URLs
 

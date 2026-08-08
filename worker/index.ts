@@ -1,7 +1,7 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
-import { runPolitilyScan, sendScheduledDigest } from "../app/lib/monitor";
+import { runPolitilyScan, sendDueScheduledDigests } from "../app/lib/monitor";
 import type { RuntimeEnv } from "../app/lib/types";
 
 interface Env {
@@ -11,7 +11,12 @@ interface Env {
   GEMINI_MODEL?: string;
   RESEND_API_KEY?: string;
   ALERT_EMAIL?: string;
+  POLITILY_ALERT_EMAIL?: string;
+  EMAIL_TO?: string;
   ALERT_FROM_EMAIL?: string;
+  ALERT_FROM_MAIL?: string;
+  POLITILY_ALERT_FROM_EMAIL?: string;
+  RESEND_FROM_EMAIL?: string;
   APP_BASE_URL?: string;
   POLITILY_SCORE_THRESHOLD?: string;
   POLITILY_ALERT_MIN_SCORE?: string;
@@ -69,16 +74,11 @@ const worker = {
     env: Env,
     ctx: ExecutionContext
   ): Promise<void> {
-    if (controller.cron === "30 9,15 * * *") {
-      ctx.waitUntil(
-        runPolitilyScan(env as RuntimeEnv)
-          .catch(() => null)
-          .then(() => sendScheduledDigest(env as RuntimeEnv))
-      );
-      return;
-    }
-
-    ctx.waitUntil(runPolitilyScan(env as RuntimeEnv));
+    ctx.waitUntil(
+      runPolitilyScan(env as RuntimeEnv)
+        .catch(() => null)
+        .then(() => sendDueScheduledDigests(env as RuntimeEnv))
+    );
   },
 };
 

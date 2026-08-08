@@ -1,5 +1,5 @@
 import { getDemoState } from "./demo-data";
-import { sendBriefEmail, sendSignalEmail, sendStrategicDigestEmail } from "./email";
+import { getEmailSettings, sendBriefEmail, sendSignalEmail, sendStrategicDigestEmail } from "./email";
 import { generateBriefWithGemini } from "./gemini";
 import { areSameIssue, issueMatchConfidence, issueSimilarity } from "./issues";
 import { fingerprintFor, scoreSignal, titleSimilarity } from "./scoring";
@@ -8,6 +8,7 @@ import {
   createRun,
   ensureDatabase,
   finishRun,
+  getDigestRunByKey,
   getDashboardState as getStoredDashboardState,
   getStoryByFingerprint,
   getStoryById,
@@ -19,6 +20,7 @@ import {
   markEmailSent,
   markStaleRunsFailed,
   newId,
+  recordDigestRun,
   saveBrief,
   strengthenStoryFromSignal,
   updateSourceChecked,
@@ -34,11 +36,12 @@ import type {
 
 export function getRuntimeConfig(env: RuntimeEnv): DashboardState["config"] {
   const threshold = numberEnv(env.POLITILY_SCORE_THRESHOLD, 72);
+  const emailSettings = getEmailSettings(env);
   return {
     threshold,
-    alertThreshold: numberEnv(env.POLITILY_ALERT_MIN_SCORE, 85),
+    alertThreshold: numberEnv(env.POLITILY_ALERT_MIN_SCORE, 82),
     geminiReady: Boolean(env.GEMINI_API_KEY),
-    emailReady: Boolean(env.RESEND_API_KEY && env.ALERT_EMAIL && env.ALERT_FROM_EMAIL),
+    emailReady: emailSettings.ready,
     storageReady: Boolean(env.DB),
     model: env.GEMINI_MODEL || "gemini-3.5-flash",
   };
@@ -70,10 +73,10 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
 
   try {
     const threshold = numberEnv(env.POLITILY_SCORE_THRESHOLD, 72);
-    const alertThreshold = numberEnv(env.POLITILY_ALERT_MIN_SCORE, 85);
+    const alertThreshold = numberEnv(env.POLITILY_ALERT_MIN_SCORE, 82);
     const maxBriefs = numberEnv(env.POLITILY_MAX_DEEP_BRIEFS_PER_RUN, 0);
     const maxEmailAlerts = Math.min(numberEnv(env.POLITILY_MAX_EMAIL_ALERTS_PER_RUN, 4), 12);
-    const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 32), 40);
+    const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 36), 40);
     const fetchTimeoutMs = Math.min(numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 5000), 8000);
     const minStoryDate = minStoryDateEnv(env.POLITILY_MIN_STORY_DATE);
     const maxMediaFetches = Math.min(numberEnv(env.POLITILY_MAX_MEDIA_FETCHES_PER_RUN, 10), 14);
@@ -316,6 +319,49 @@ export async function sendScheduledDigest(env: RuntimeEnv) {
   });
 }
 
+export async function sendDueScheduledDigests(env: RuntimeEnv, now = new Date()) {
+  if (!env.DB) {
+    return [];
+  }
+
+  await ensureDatabase(env.DB);
+  const emailSettings = getEmailSettings(env);
+  if (!emailSettings.ready) {
+    return [{ sent: false, message: `Scheduled digest pending. ${emailSettings.message}` }];
+  }
+
+  const results = [];
+  for (const slot of dueDigestSlots(now)) {
+    const existing = await getDigestRunByKey(env.DB, slot.key);
+    if (existing) {
+      continue;
+    }
+
+    const stories = await listStoriesInDateRange(env.DB, slot.startIso, slot.endIso, 180);
+    const result = await sendStrategicDigestEmail(env, stories, {
+      startIso: slot.startIso,
+      endIso: slot.endIso,
+      label: slot.label,
+    });
+
+    if (result.sent) {
+      await recordDigestRun(env.DB, {
+        digestKey: slot.key,
+        slot: slot.slot,
+        startIso: slot.startIso,
+        endIso: slot.endIso,
+        issueCount: result.issueCount ?? 0,
+        storyCount: result.storyCount ?? stories.length,
+        message: result.message,
+      });
+    }
+
+    results.push(result);
+  }
+
+  return results;
+}
+
 export async function generateResearchBriefForQuery(env: RuntimeEnv, rawQuery: string) {
   if (!env.DB) {
     return null;
@@ -554,15 +600,32 @@ function isFastAlertWorthy(
   scores: Pick<StoredStory, "totalScore" | "politicalWeight" | "viralPotential" | "tags">,
   alertThreshold: number
 ) {
-  return scores.totalScore >= alertThreshold;
+  if (scores.totalScore >= alertThreshold) {
+    return true;
+  }
+
+  const text = `${signal.title} ${signal.summary} ${scores.tags.join(" ")}`.toLowerCase();
+  const urgentEnoughForCreator =
+    scores.totalScore >= alertThreshold - 5 &&
+    scores.politicalWeight >= 74 &&
+    (scores.viralPotential >= 74 || hasAny(text, ["exclusive", "resign", "court", "supreme court", "parliament", "protest", "paper leak", "election", "bypoll"]));
+
+  return urgentEnoughForCreator;
 }
 
 function shouldFastAlertRelatedIssue(story: StoredStory, signal: RawSignal, alertThreshold: number, sourceAdded = false) {
-  if (story.emailSentAt && !sourceAdded) {
+  const signalScores = scoreSignal(signal, [story]);
+  const signalAlertWorthy = isFastAlertWorthy(signal, signalScores, alertThreshold);
+
+  if (story.emailSentAt) {
+    return Boolean(sourceAdded && signalAlertWorthy);
+  }
+
+  if (!sourceAdded && !signalAlertWorthy) {
     return false;
   }
 
-  return story.totalScore >= alertThreshold || scoreSignal(signal, [story]).totalScore >= alertThreshold;
+  return story.totalScore >= alertThreshold || signalAlertWorthy;
 }
 
 function prioritizeBriefCandidates(stories: StoredStory[]) {
@@ -717,6 +780,7 @@ function fastSourceRank(source: SignalSource) {
   const text = `${source.name} ${source.category} ${source.url} ${source.sourceLane ?? ""}`.toLowerCase();
   if (/ani/.test(text) && /parliament|lok sabha|rajya sabha|exclusive|wire|politics/.test(text)) return 5;
   if (/parliament|lok sabha|rajya sabha|sansad|prsindia|bill|ordinance/.test(text)) return 4;
+  if (/fast lane/.test(text)) return 4;
   if (/pti|uni|reuters|associated press|agency|wire/.test(text)) return 3;
   if (/freshness|direct newsroom rss/.test(text)) return 2;
   if (/hot topic/.test(text)) return 1;
@@ -1263,6 +1327,48 @@ function todayDigestWindow() {
     startIso,
     endIso,
     label: `Media report - ${formatHumanDate(today)} till ${formatIstTime(endIso)}`,
+  };
+}
+
+function dueDigestSlots(now: Date) {
+  const parts = istParts(now);
+  const today = `${parts.year}-${parts.month}-${parts.day}`;
+  const minuteOfDay = Number(parts.hour) * 60 + Number(parts.minute);
+  const startIso = new Date(`${today}T00:00:00.000+05:30`).toISOString();
+  const endIso = now.toISOString();
+  const slots = [
+    { slot: "1500", minute: 15 * 60, name: "3 PM IST media report" },
+    { slot: "2100", minute: 21 * 60, name: "9 PM IST end-of-day report" },
+  ];
+
+  return slots
+    .filter((slot) => minuteOfDay >= slot.minute)
+    .map((slot) => ({
+      key: `${today}-${slot.slot}`,
+      slot: slot.slot,
+      startIso,
+      endIso,
+      label: `${slot.name} - ${formatHumanDate(today)} till ${formatIstTime(endIso)}`,
+    }));
+}
+
+function istParts(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+  }).formatToParts(date);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  return {
+    year: part("year"),
+    month: part("month"),
+    day: part("day"),
+    hour: part("hour") === "24" ? "00" : part("hour"),
+    minute: part("minute"),
   };
 }
 

@@ -71,3 +71,15 @@ export const scanRuns = sqliteTable("scan_runs", {
   emailedCount: integer("emailed_count").notNull().default(0),
   message: text("message").notNull().default(""),
 });
+
+export const emailDigests = sqliteTable("email_digests", {
+  id: text("id").primaryKey(),
+  digestKey: text("digest_key").notNull().unique(),
+  slot: text("slot").notNull(),
+  sentAt: text("sent_at").notNull(),
+  startIso: text("start_iso").notNull(),
+  endIso: text("end_iso").notNull(),
+  issueCount: integer("issue_count").notNull().default(0),
+  storyCount: integer("story_count").notNull().default(0),
+  message: text("message").notNull().default(""),
+});
