@@ -14,7 +14,7 @@
     "lint": "eslint app worker db tests",
     "db:generate": "drizzle-kit generate",
     "check": "tsc --noEmit",
-    "test": "tsx tests/newsroom.test.ts",
+    "test": "tsx tests/newsroom.test.ts && tsx tests/database-protection.test.ts",
     "deploy": "pnpm run build && wrangler deploy --config dist/server/wrangler.json"
   },
   "dependencies": {

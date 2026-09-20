@@ -1,4 +1,6 @@
 import { DEFAULT_SOURCES } from "./source-library";
+import { scoreSignal } from "./scoring";
+import { databaseIdentity, remainingQueries, ServiceError } from "./database-protection";
 import type {
   DashboardState,
   PolitilyBrief,
@@ -8,6 +10,7 @@ import type {
   StorySourceLink,
   StoredStory,
   StoryStatus,
+  RawSignal,
 } from "./types";
 
 const schemaStatements = [
@@ -92,8 +95,30 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS stories_total_score_idx ON stories (total_score DESC)`,
   `CREATE INDEX IF NOT EXISTS stories_detected_at_idx ON stories (detected_at DESC)`,
   `CREATE INDEX IF NOT EXISTS story_sources_story_id_idx ON story_sources (story_id)`,
+  `CREATE INDEX IF NOT EXISTS story_sources_identity_idx ON story_sources (story_id, url, source_name)`,
   `CREATE INDEX IF NOT EXISTS email_digests_sent_at_idx ON email_digests (sent_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS scan_runs_started_idx ON scan_runs (started_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS scan_runs_status_started_idx ON scan_runs (status, started_at)`,
+  `CREATE INDEX IF NOT EXISTS stories_report_date_idx ON stories (COALESCE(published_at, detected_at))`,
+  `CREATE INDEX IF NOT EXISTS story_sources_created_idx ON story_sources (created_at, story_id)`,
+  `CREATE INDEX IF NOT EXISTS story_sources_story_created_idx ON story_sources (story_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS stories_archive_idx ON stories (detected_at, id)`,
+  `CREATE INDEX IF NOT EXISTS source_archive_idx ON story_sources (created_at, id)`,
+  `CREATE TABLE IF NOT EXISTS app_locks (name TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS email_outbox (
+    id TEXT PRIMARY KEY, kind TEXT NOT NULL, story_id TEXT,
+    subject TEXT NOT NULL, payload_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0,
+    provider_id TEXT, last_error TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, next_attempt_at TEXT NOT NULL,
+    lease_until TEXT, accepted_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS email_outbox_due_idx ON email_outbox (status, next_attempt_at)`,
+  `CREATE INDEX IF NOT EXISTS email_outbox_created_idx ON email_outbox (created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS email_outbox_story_idx ON email_outbox (story_id, kind, created_at)`,
 ];
+
+const SOURCE_CATALOG_SENTINEL_ID = "global-summits-live-v3";
 
 const legacySourceIdsToPause = [
   "gdelt-india-politics",
@@ -110,6 +135,9 @@ const storyColumnMigrations = [
 ];
 
 const sourceColumnMigrations = [
+  { name: "last_error", sql: "ALTER TABLE sources ADD COLUMN last_error TEXT NOT NULL DEFAULT ''" },
+  { name: "last_success_at", sql: "ALTER TABLE sources ADD COLUMN last_success_at TEXT" },
+  { name: "last_signal_count", sql: "ALTER TABLE sources ADD COLUMN last_signal_count INTEGER NOT NULL DEFAULT 0" },
   { name: "bias_lean", sql: "ALTER TABLE sources ADD COLUMN bias_lean TEXT NOT NULL DEFAULT 'unknown'" },
   { name: "verification_method", sql: "ALTER TABLE sources ADD COLUMN verification_method TEXT NOT NULL DEFAULT ''" },
   { name: "language", sql: "ALTER TABLE sources ADD COLUMN language TEXT NOT NULL DEFAULT 'English'" },
@@ -123,6 +151,7 @@ const storySourceColumnMigrations = [
 ];
 
 type Row = Record<string, unknown>;
+const databaseSetup = new WeakMap<object, Promise<void>>();
 
 export function newId(prefix: string) {
   const random = Math.random().toString(36).slice(2, 9);
@@ -130,11 +159,43 @@ export function newId(prefix: string) {
 }
 
 export async function ensureDatabase(db: D1Database) {
-  await db.batch(schemaStatements.map((statement) => db.prepare(statement)));
-  await migrateTableColumns(db, "stories", storyColumnMigrations);
-  await migrateTableColumns(db, "sources", sourceColumnMigrations);
-  await migrateTableColumns(db, "story_sources", storySourceColumnMigrations);
+  const key = databaseIdentity(db) as unknown as object;
+  const existing = databaseSetup.get(key);
+  if (existing) {
+    return existing;
+  }
+
+  const setup = ensureDatabaseOnce(db).catch((error) => {
+    databaseSetup.delete(key);
+    throw error;
+  });
+  databaseSetup.set(key, setup);
+  return setup;
+}
+
+async function ensureDatabaseOnce(db: D1Database) {
+  try {
+    if (await db.prepare("SELECT owner FROM app_locks WHERE name = 'schema:newsroom-3.2'").first()) return;
+  } catch (error) {
+    if (!/no such table/i.test(String(error))) throw error;
+  }
+  await db.prepare("CREATE TABLE IF NOT EXISTS app_locks (name TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at TEXT NOT NULL)").run();
+  const stage = async (name: string, work: () => Promise<unknown>) => {
+    const key = `setup:3.2:${name}`;
+    if (await db.prepare("SELECT owner FROM app_locks WHERE name=?").bind(key).first()) return;
+    await work();
+    await db.prepare("INSERT OR IGNORE INTO app_locks (name,owner,expires_at) VALUES (?, 'complete', '9999-01-01T00:00:00Z')").bind(key).run();
+    if (remainingQueries() < 35) throw new ServiceError("Preparing the database in small Free-plan batches. Please retry in a few seconds; existing data is preserved.", "DATABASE_SETUP", 5);
+  };
+  await stage("tables", () => db.batch(schemaStatements.map((statement) => db.prepare(statement))));
+  await stage("columns", async () => {
+    await migrateTableColumns(db, "stories", storyColumnMigrations);
+    await migrateTableColumns(db, "sources", sourceColumnMigrations);
+    await migrateTableColumns(db, "story_sources", storySourceColumnMigrations);
+  });
   await seedSources(db);
+  await db.prepare("INSERT OR IGNORE INTO app_locks (name, owner, expires_at) VALUES ('schema:newsroom-3.2', 'complete', '9999-01-01T00:00:00Z')").run();
+  if (remainingQueries() < 35) throw new ServiceError("Database setup is complete. Retry once to open the newsroom.", "DATABASE_SETUP", 5);
 }
 
 async function migrateTableColumns(
@@ -147,7 +208,13 @@ async function migrateTableColumns(
   const missing = migrations.filter((migration) => !columns.has(migration.name));
 
   if (missing.length) {
-    await db.batch(missing.map((migration) => db.prepare(migration.sql)));
+    try {
+      await db.batch(missing.map((migration) => db.prepare(migration.sql)));
+    } catch (error) {
+      // Another Worker isolate can complete the same additive migration first.
+      const current = await db.prepare(`PRAGMA table_info(${tableName})`).all<Row>();
+      if (missing.some(migration => !current.results.some(row => row.name === migration.name))) throw error;
+    }
   }
 }
 
@@ -170,13 +237,22 @@ export async function markStaleRunsFailed(db: D1Database, olderThanMinutes = 10)
 }
 
 async function seedSources(db: D1Database) {
-  await db.batch(
-    DEFAULT_SOURCES.map((source) =>
-      db
-        .prepare(
+  const catalogReady = await db
+    .prepare("SELECT id FROM sources WHERE id = ? LIMIT 1")
+    .bind(SOURCE_CATALOG_SENTINEL_ID)
+    .first<Row>();
+
+  if (catalogReady) {
+    return;
+  }
+
+  const inserts: D1PreparedStatement[] = [];
+  for (let offset = 0; offset < DEFAULT_SOURCES.length; offset += 8) {
+    const chunk = DEFAULT_SOURCES.slice(offset, offset + 8);
+    inserts.push(db.prepare(
           `INSERT INTO sources
           (id, name, type, url, region, category, bias_lean, verification_method, language, source_lane, priority, active)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES ${chunk.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(",")}
           ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             type = excluded.type,
@@ -187,10 +263,9 @@ async function seedSources(db: D1Database) {
             verification_method = excluded.verification_method,
             language = excluded.language,
             source_lane = excluded.source_lane,
-            priority = excluded.priority,
-            active = excluded.active`
+            priority = excluded.priority`
         )
-        .bind(
+        .bind(...chunk.flatMap(source => [
           source.id,
           source.name,
           source.type,
@@ -202,10 +277,10 @@ async function seedSources(db: D1Database) {
           source.language ?? inferSourceLanguage(source.name, source.category, source.url),
           source.sourceLane ?? inferSourceLane(source.name, source.category, source.type, source.url),
           source.priority,
-          source.active ? 1 : 0
-        )
-    )
-  );
+          source.active ? 1 : 0,
+        ])));
+  }
+  await db.batch(inserts);
 
   await db.batch(
     legacySourceIdsToPause.map((id) =>
@@ -222,10 +297,10 @@ export async function listSources(db: D1Database): Promise<SignalSource[]> {
   return result.results.map(toSource);
 }
 
-export async function updateSourceChecked(db: D1Database, id: string) {
+export async function updateSourceChecked(db: D1Database, id: string, error = "", count = 0) {
   await db
-    .prepare("UPDATE sources SET last_checked_at = ? WHERE id = ?")
-    .bind(new Date().toISOString(), id)
+    .prepare("UPDATE sources SET last_checked_at = ?, last_error = ?, last_signal_count = ?, last_success_at = CASE WHEN ? = '' THEN ? ELSE last_success_at END WHERE id = ?")
+    .bind(new Date().toISOString(), error.slice(0, 350), count, error, new Date().toISOString(), id)
     .run();
 }
 
@@ -351,7 +426,8 @@ export async function getStoryByFingerprint(
 
 export async function getStoryById(
   db: D1Database,
-  id: string
+  id: string,
+  includeSources = true
 ): Promise<StoredStory | null> {
   const row = await db.prepare("SELECT * FROM stories WHERE id = ?").bind(id).first<Row>();
   if (!row) {
@@ -359,7 +435,9 @@ export async function getStoryById(
   }
 
   const story = toStory(row);
-  story.sourceLinks = await listStorySources(db, story.id);
+  if (includeSources) {
+    await attachStorySources(db, [story]);
+  }
   return story;
 }
 
@@ -401,24 +479,30 @@ export async function insertStory(db: D1Database, story: StoredStory) {
     .run();
 }
 
+export async function promoteLatestReport(db: D1Database, storyId: string, signal: RawSignal, scores: StoryScores) {
+  await db.prepare(`UPDATE stories SET title=?, summary=?, url=?, source_name=?, source_type=?,
+    published_at=?, article_excerpt=?, language=?, novelty_score=?, political_weight=?, geopolitical_relevance=?,
+    viral_potential=?, sentiment_score=?, total_score=?, scoring_breakdown_json=?, tags_json=? WHERE id=?`)
+    .bind(signal.title, signal.summary, signal.url, signal.sourceName, signal.sourceType,
+      signal.publishedAt || null, signal.articleExcerpt || signal.summary, signal.language || "",
+      scores.noveltyScore, scores.politicalWeight, scores.geopoliticalRelevance, scores.viralPotential,
+      scores.sentimentScore, scores.totalScore, JSON.stringify(scores.scoringBreakdown), JSON.stringify(scores.tags), storyId).run();
+}
+
 export async function addStorySource(
   db: D1Database,
   link: Omit<StorySourceLink, "id" | "createdAt">
 ) {
-  const existing = await db
-    .prepare("SELECT id FROM story_sources WHERE story_id = ? AND url = ? AND source_name = ? LIMIT 1")
-    .bind(link.storyId, link.url, link.sourceName)
-    .first<Row>();
-
-  if (existing) {
-    return false;
-  }
-
-  await db
+  const result = await db
     .prepare(
-      `INSERT OR IGNORE INTO story_sources
-      (id, story_id, title, url, source_name, bias_lean, verification_method, source_lane, published_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO story_sources
+      (id, story_id, title, url, source_name, bias_lean, verification_method, source_lane, published_at, created_at)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE NOT EXISTS (
+        SELECT 1 FROM story_sources
+        WHERE story_id = ? AND url = ? AND source_name = ?
+        LIMIT 1
+      )`
     )
     .bind(
       newId("src"),
@@ -429,11 +513,15 @@ export async function addStorySource(
       link.biasLean ?? inferBiasLean(link.sourceName, "", link.url),
       link.verificationMethod ?? inferSourceVerificationMethod(link.sourceName, "", "rss"),
       link.sourceLane ?? inferSourceLane(link.sourceName, "", "rss", link.url),
-      link.publishedAt
+      link.publishedAt,
+      new Date().toISOString(),
+      link.storyId,
+      link.url,
+      link.sourceName
     )
     .run();
 
-  return true;
+  return Number((result.meta as { changes?: number } | undefined)?.changes ?? 0) > 0;
 }
 
 export async function strengthenStoryFromSignal(
@@ -489,27 +577,11 @@ export async function listStorySources(
   storyId: string
 ): Promise<StorySourceLink[]> {
   const result = await db
-    .prepare(
-      `SELECT
-        MIN(id) AS id,
-        story_id,
-        title,
-        url,
-        source_name,
-        bias_lean,
-        verification_method,
-        source_lane,
-        published_at,
-        MIN(created_at) AS created_at
-      FROM story_sources
-      WHERE story_id = ?
-      GROUP BY story_id, url, source_name, title, bias_lean, verification_method, source_lane, published_at
-      ORDER BY created_at DESC`
-    )
+    .prepare(`SELECT * FROM story_sources WHERE story_id = ? ORDER BY created_at DESC LIMIT 100`)
     .bind(storyId)
     .all<Row>();
 
-  return result.results.map(toStorySource);
+  return uniqueSourceRows(result.results).map(toStorySource);
 }
 
 export async function saveBrief(
@@ -535,7 +607,8 @@ export async function markEmailSent(db: D1Database, storyId: string) {
 
 export async function listRecentStories(
   db: D1Database,
-  limit = 60
+  limit = 60,
+  sourceLimit = 20
 ): Promise<StoredStory[]> {
   const result = await db
     .prepare("SELECT * FROM stories ORDER BY detected_at DESC LIMIT ?")
@@ -543,7 +616,9 @@ export async function listRecentStories(
     .all<Row>();
 
   const stories = result.results.map(toStory);
-  await attachSources(db, stories.slice(0, 20));
+  if (sourceLimit > 0) {
+    await attachStorySources(db, stories.slice(0, sourceLimit));
+  }
   return stories;
 }
 
@@ -556,17 +631,24 @@ export async function listStoriesInDateRange(
   await ensureDatabase(db);
   const result = await db
     .prepare(
-      `SELECT * FROM stories
-      WHERE COALESCE(published_at, detected_at) >= ?
-        AND COALESCE(published_at, detected_at) <= ?
-      ORDER BY total_score DESC, viral_potential DESC, detected_at DESC
+      `SELECT * FROM stories WHERE id IN (
+        SELECT id FROM stories WHERE COALESCE(published_at, detected_at) >= ? AND COALESCE(published_at, detected_at) <= ?
+        UNION
+        SELECT story_id FROM story_sources WHERE created_at >= ? AND created_at <= ?
+          AND (published_at IS NULL OR published_at >= ?)
+        UNION
+        SELECT story_id FROM story_sources WHERE created_at >= ? AND created_at <= ?
+          AND (published_at IS NULL OR published_at >= ?)
+      )
+      ORDER BY total_score DESC, detected_at DESC
       LIMIT ?`
     )
-    .bind(startIso, endIso, limit)
+    .bind(startIso, endIso, startIso, endIso, startIso,
+      startIso.replace("T", " ").slice(0, 19), endIso.replace("T", " ").slice(0, 19), startIso, limit)
     .all<Row>();
 
   const stories = result.results.map(toStory);
-  await attachSources(db, stories);
+  await attachStorySources(db, stories);
   return stories;
 }
 
@@ -584,10 +666,11 @@ export async function getDashboardState(
   config: DashboardState["config"]
 ): Promise<DashboardState> {
   await ensureDatabase(db);
-  const [stories, sources, runs] = await Promise.all([
-    listRecentStories(db, 80),
+  const [stories, sources, runs, deliveries] = await Promise.all([
+    listRecentStories(db, 160, 160),
     listSources(db),
     listRuns(db),
+    db.prepare("SELECT id, kind, story_id, subject, status, attempts, provider_id, last_error, created_at, accepted_at, next_attempt_at FROM email_outbox ORDER BY created_at DESC LIMIT 40").all<Row>(),
   ]);
 
   return {
@@ -597,15 +680,45 @@ export async function getDashboardState(
     stories,
     sources,
     runs,
+    deliveries: deliveries.results,
   };
 }
 
-async function attachSources(db: D1Database, stories: StoredStory[]) {
-  await Promise.all(
-    stories.map(async (story) => {
-      story.sourceLinks = await listStorySources(db, story.id);
-    })
-  );
+export async function attachStorySources(db: D1Database, stories: StoredStory[]) {
+  if (!stories.length) {
+    return;
+  }
+
+  const storiesById = new Map(stories.map((story) => [story.id, story]));
+  for (const story of stories) {
+    story.sourceLinks = [];
+    story.sourceLinksTruncated = false;
+  }
+
+  for (let offset = 0; offset < stories.length; offset += 80) {
+    const storyIds = stories.slice(offset, offset + 80).map((story) => story.id);
+    // A LIMIT inside each indexed subquery bounds reads even for years-old umbrellas.
+    const result = await db
+      .prepare(
+        storyIds.map(() => "SELECT * FROM (SELECT * FROM story_sources WHERE story_id = ? ORDER BY created_at DESC LIMIT 26)").join(" UNION ALL ")
+      )
+      .bind(...storyIds)
+      .all<Row>();
+
+    const rawCounts = new Map<string, number>();
+    for (const row of result.results) rawCounts.set(String(row.story_id), (rawCounts.get(String(row.story_id)) || 0) + 1);
+    for (const row of uniqueSourceRows(result.results)) {
+      const story = storiesById.get(String(row.story_id));
+      if (story) {
+        story.sourceLinksTruncated = (rawCounts.get(story.id) || 0) > 25;
+        if (story.sourceLinks!.length < 25) story.sourceLinks?.push(toStorySource(row));
+      }
+    }
+  }
+}
+
+function uniqueSourceRows(rows: Row[]) {
+  return [...new Map(rows.map(row => [`${row.story_id}|${row.url}|${row.source_name}`, row])).values()];
 }
 
 function toSource(row: Row): SignalSource {
@@ -624,13 +737,16 @@ function toSource(row: Row): SignalSource {
     sourceLane: String(row.source_lane ?? "portal") as SignalSource["sourceLane"],
     createdAt: String(row.created_at ?? ""),
     lastCheckedAt: row.last_checked_at ? String(row.last_checked_at) : null,
+    lastError: String(row.last_error || ""),
+    lastSuccessAt: row.last_success_at ? String(row.last_success_at) : null,
+    lastSignalCount: Number(row.last_signal_count || 0),
   };
 }
 
 function toStory(row: Row): StoredStory {
   const brief = row.brief_json ? safeJson<PolitilyBrief>(String(row.brief_json)) : null;
 
-  return {
+  const story: StoredStory = {
     id: String(row.id),
     fingerprint: String(row.fingerprint),
     title: String(row.title),
@@ -660,6 +776,10 @@ function toStory(row: Row): StoredStory {
     scriptText: row.script_text ? String(row.script_text) : null,
     emailSentAt: row.email_sent_at ? String(row.email_sent_at) : null,
   };
+  if (!story.scoringBreakdown?.formula?.startsWith("v3:")) {
+    Object.assign(story, scoreSignal({ ...story, sourceId: story.id, sourcePriority: 0 }));
+  }
+  return story;
 }
 
 function toStorySource(row: Row): StorySourceLink {

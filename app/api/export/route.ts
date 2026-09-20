@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { docxFileName, makeBriefDocx } from "../../lib/docx";
 import { getStoryById } from "../../lib/storage";
 import type { RuntimeEnv } from "../../lib/types";
+import { errorResponse, withDatabaseProtection } from "../../lib/database-protection";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,8 @@ export async function GET(request: Request) {
     return Response.json({ error: "Storage is not connected." }, { status: 503 });
   }
 
-  const story = await getStoryById(runtimeEnv.DB, storyId);
+  try {
+  const story = await withDatabaseProtection(runtimeEnv, "export", safe => getStoryById(safe.DB!, storyId));
   if (!story) {
     return Response.json({ error: "Story not found." }, { status: 404 });
   }
@@ -29,4 +31,5 @@ export async function GET(request: Request) {
       "Cache-Control": "no-store",
     },
   });
+  } catch (error) { return errorResponse(error); }
 }

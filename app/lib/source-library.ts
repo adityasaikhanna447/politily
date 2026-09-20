@@ -30,6 +30,24 @@ const indiaCoreTerms =
 
 export const DEFAULT_SOURCES: SignalSource[] = [
   {
+    id: "global-summits-live-v3", name: "BRICS, G20 and diplomatic developments", type: "rss",
+    url: googleNewsRss('(BRICS OR G20 OR summit OR bilateral OR treaty OR "foreign policy") when:12h'),
+    region: "global", category: "Fast lane / Diplomacy", priority: 95, active: true,
+    sourceLane: "portal", language: "English", biasLean: "unknown",
+  },
+  {
+    id: "rss-bbc-world-v3", name: "BBC World", type: "rss",
+    url: "https://feeds.bbci.co.uk/news/world/rss.xml", region: "global",
+    category: "Direct newsroom RSS / World", priority: 90, active: true,
+    sourceLane: "portal", language: "English", biasLean: "unknown",
+  },
+  {
+    id: "rss-aljazeera-world-v3", name: "Al Jazeera World", type: "rss",
+    url: "https://www.aljazeera.com/xml/rss/all.xml", region: "global",
+    category: "Direct newsroom RSS / World", priority: 90, active: true,
+    sourceLane: "portal", language: "English", biasLean: "unknown",
+  },
+  {
     id: "fast-google-india-politics-2h",
     name: "Fast India Politics 2h",
     type: "rss",
@@ -98,6 +116,74 @@ export const DEFAULT_SOURCES: SignalSource[] = [
     active: true,
   },
   {
+    id: "fast-google-independent-newsrooms-2h",
+    name: "Fast Independent Newsrooms 2h",
+    type: "rss",
+    url: googleNewsRss(
+      '(site:thehindu.com OR site:indianexpress.com OR site:ndtv.com OR site:hindustantimes.com OR site:timesofindia.indiatimes.com OR site:indiatoday.in OR site:theprint.in OR site:economictimes.indiatimes.com) (India politics OR parliament OR policy OR court OR election OR protest) when:2h'
+    ),
+    region: "india",
+    category: "Fast lane / independent national newsrooms",
+    biasLean: "mixed",
+    verificationMethod:
+      "Independent-newsroom fast lane: group the reports by issue, preserve each outlet's framing, and verify decisive claims with primary records or a non-syndicated second source.",
+    language: "English",
+    sourceLane: "portal",
+    priority: 144,
+    active: true,
+  },
+  {
+    id: "fast-google-policy-economy-2h",
+    name: "Fast Policy + Economy 2h",
+    type: "rss",
+    url: googleNewsRss(
+      '(India OR Indian) (budget OR inflation OR unemployment OR jobs OR GST OR tax OR welfare OR subsidy OR RBI OR scheme OR cabinet decision) when:2h'
+    ),
+    region: "india",
+    category: "Fast lane / policy economy impact",
+    biasLean: "unknown",
+    verificationMethod:
+      "Policy/economy fast lane: verify figures against the Budget, RBI, NSO, ministry, cabinet, court, or scheme document before presenting impact claims.",
+    language: "English",
+    sourceLane: "portal",
+    priority: 143,
+    active: true,
+  },
+  {
+    id: "fast-google-security-diplomacy-2h",
+    name: "Fast Security + Diplomacy 2h",
+    type: "rss",
+    url: googleNewsRss(
+      '(India OR Indian) (Pakistan OR China OR border OR defence OR security OR Kashmir OR terrorism OR diplomacy OR sanctions OR MEA OR Jaishankar) when:2h'
+    ),
+    region: "india/global",
+    category: "Fast lane / national security foreign policy",
+    biasLean: "unknown",
+    verificationMethod:
+      "Security/diplomacy fast lane: distinguish official confirmation, agency reporting, foreign claims, and analysis; verify against MEA, defence, court, or parliamentary records.",
+    language: "English",
+    sourceLane: "portal",
+    priority: 142,
+    active: true,
+  },
+  {
+    id: "fast-google-visual-explainers-2h",
+    name: "Fast Visual Explainer Candidates 2h",
+    type: "rss",
+    url: googleNewsRss(
+      '(India OR Indian) (explained OR controversy OR ban OR crackdown OR backlash OR resignation OR "viral video" OR "why it matters" OR "what happened") when:2h'
+    ),
+    region: "india/global",
+    category: "Fast lane / visual explainer candidates",
+    biasLean: "unknown",
+    verificationMethod:
+      "Visual-explainer discovery lane inspired by high-velocity social news pages. It supplies topic ideas only; claims require source diversity and primary-document checks.",
+    language: "English",
+    sourceLane: "portal",
+    priority: 141,
+    active: true,
+  },
+  {
     id: "fast-google-ani-pti-uni-2h",
     name: "Fast ANI/PTI/UNI Wire 2h",
     type: "rss",
@@ -111,7 +197,7 @@ export const DEFAULT_SOURCES: SignalSource[] = [
       "Agency fast lane: use for speed; treat syndicated repeats as one wire origin until non-wire/primary corroboration appears.",
     language: "English",
     sourceLane: "agency",
-    priority: 144,
+    priority: 140,
     active: true,
   },
   {
@@ -264,7 +350,7 @@ export const DEFAULT_SOURCES: SignalSource[] = [
     name: "Hindi Political Signals Clean 24h",
     type: "rss",
     url: googleNewsRss(
-      "(site:bhaskar.com OR site:amarujala.com OR site:jagran.com OR site:livehindustan.com OR site:abplive.com) rajneeti chunav sansad sarkar virodh congress bjp berozgari mehengai when:1d",
+      "(site:bhaskar.com OR site:amarujala.com OR site:jagran.com OR site:livehindustan.com OR site:abplive.com) (राजनीति OR चुनाव OR संसद OR सरकार OR विरोध OR कांग्रेस OR भाजपा OR बेरोजगारी OR महंगाई) when:1d",
       "hi"
     ),
     region: "india/hindi-belt",

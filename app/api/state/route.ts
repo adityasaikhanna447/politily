@@ -1,15 +1,19 @@
 import { env } from "cloudflare:workers";
 import { loadDashboardState } from "../../lib/monitor";
 import type { RuntimeEnv } from "../../lib/types";
+import { createStateReader } from "../../lib/state-cache";
+import { errorResponse, RELEASE, withDatabaseProtection } from "../../lib/database-protection";
 
 export const dynamic = "force-dynamic";
+const read = createStateReader();
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const state = await loadDashboardState(env as unknown as RuntimeEnv);
-    return Response.json(state);
+    const key = `${new URL(request.url).origin}/__internal/state-${RELEASE}`;
+    const cache = typeof caches !== "undefined" ? (caches as CacheStorage & { default?: Cache }).default : undefined;
+    const state = await read(key, () => withDatabaseProtection(env as unknown as RuntimeEnv, "dashboard", loadDashboardState), cache);
+    return Response.json(state, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to load Politily state.";
-    return Response.json({ error: message }, { status: 500 });
+    return errorResponse(error);
   }
 }

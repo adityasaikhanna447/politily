@@ -1,55 +1,29 @@
-# Deployment
+# Deploy Politily 3.2 Free Mode
 
-## Recommended Platform
+Follow [START-HERE-BEGINNER.md](START-HERE-BEGINNER.md) for the step-by-step process.
+This guide supersedes the Paid-oriented instructions in releases 3.0 and 3.1.
 
-Cloudflare is the best fit for Politily because the same platform can host the dashboard, run Worker cron, and provide D1 storage.
+## Technical Checklist
 
-This repository is now Cloudflare-only. Do not upload Netlify config or OpenAI Sites config for this deployment.
+- Preserve the existing D1 database; confirm its ID in vite.config.ts before deployment.
+- Node 24, pnpm 11.19.0; install with pnpm-lock.yaml. Remove obsolete package-lock.json.
+- Build: `pnpm install --frozen-lockfile && pnpm run build`
+- Deploy: `pnpm exec wrangler deploy --config dist/server/wrangler.json`
+- Keep GEMINI_API_KEY and RESEND_API_KEY as Worker secrets, never in Git.
+- Free mode is enabled in config. Ingestion: four rotating feeds, six reports maximum,
+  no automatic Gemini research and no inline scan emails/media enrichment.
+- Two separate cron invocations: `*/5 * * * *` for scans, `1-59/5 * * * *` for mail.
+- Digests due 14:00 / 21:00 Asia/Kolkata, processed on the next mail tick.
+- Setup progresses in small idempotent stages. DATABASE_SETUP is retryable, not data loss.
+- Query cap: 45 per protected invocation. Read guard: 8,000 actual rows per operation,
+  stopping subsequent queries after the limit. Neither is an account-wide daily quota.
+- /api/health reports newsroom-3.2-free-archive; presence checks do not prove delivery.
+- /api/archive supports paginated 31-day captured-data exports. No automatic purge.
 
-## Required Environment Variables
+Run `pnpm test`, `pnpm run check` and `pnpm run build` before deploying.
+In Delivery test one email and newsletter, then verify actual delivery in Resend.
+In Cloudflare D1 Metrics inspect reads/writes/storage; in Worker logs filter
+politily_d1_usage for actual per-operation query/read/write metadata.
 
-Copy `.env.example` and set these in local development and production:
-
-- `GEMINI_API_KEY`
-- `GEMINI_MODEL`
-- `RESEND_API_KEY`
-- `ALERT_EMAIL`
-- `ALERT_FROM_EMAIL`
-- `APP_BASE_URL`
-- `POLITILY_SCORE_THRESHOLD`
-- `POLITILY_ALERT_MIN_SCORE`
-- `POLITILY_MAX_DEEP_BRIEFS_PER_RUN`
-- `POLITILY_MAX_EMAIL_ALERTS_PER_RUN`
-- `POLITILY_MAX_SOURCES_PER_RUN`
-- `POLITILY_FETCH_TIMEOUT_MS`
-- `POLITILY_MIN_STORY_DATE`
-- `POLITILY_MAX_MEDIA_FETCHES_PER_RUN`
-
-For Cloudflare production, keep `GEMINI_API_KEY` and `RESEND_API_KEY` as secrets in Workers > Settings > Variables and secrets. In this personal deployment, `ALERT_EMAIL` and `ALERT_FROM_EMAIL` are pinned as non-secret text vars in `vite.config.ts` so Git deploys do not silently remove them. If you change inbox or sender domain, edit those two values there and redeploy.
-
-## Cloudflare Runtime
-
-The app exports a Worker `scheduled()` handler in `worker/index.ts`. Configure a cron trigger such as:
-
-```txt
-*/2 * * * *
-```
-
-That checks sources every 2 minutes. Scanning RSS/GDELT/open pages uses 0 Gemini tokens; Gemini is used only when a brief is generated.
-
-For early-access free-tier scans, start with:
-
-```txt
-POLITILY_MAX_SOURCES_PER_RUN=36
-POLITILY_FETCH_TIMEOUT_MS=5000
-POLITILY_ALERT_MIN_SCORE=82
-POLITILY_MAX_EMAIL_ALERTS_PER_RUN=4
-POLITILY_MAX_DEEP_BRIEFS_PER_RUN=0
-```
-
-## Email Rhythm
-
-- Scanner cron: `*/2 * * * *`
-- Scheduled digest cron: optional `30 9,15 * * *`. Every scheduled scan now checks due digest slots too.
-- Digest timing in India: 3 PM and 9 PM IST
-- Instant alerts: only issues at `POLITILY_ALERT_MIN_SCORE=82` or above
+Browser/server tests do not establish real Cloudflare Free CPU headroom or sustained
+account-wide usage. Observe those after deployment. Upstream feeds may lag or fail.

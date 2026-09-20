@@ -1,10 +1,15 @@
 import { getDemoState } from "./demo-data";
+import { acquireLease, releaseLease } from "./delivery";
+import { ServiceError, freeMode, remainingQueries } from "./database-protection";
+import { cleanText, reportSlots } from "./presentation";
+import { XMLParser } from "fast-xml-parser";
 import { getEmailSettings, sendBriefEmail, sendSignalEmail, sendStrategicDigestEmail } from "./email";
 import { generateBriefWithGemini } from "./gemini";
 import { areSameIssue, issueMatchConfidence, issueSimilarity } from "./issues";
 import { fingerprintFor, scoreSignal, titleSimilarity } from "./scoring";
 import {
   addStorySource,
+  attachStorySources,
   createRun,
   ensureDatabase,
   finishRun,
@@ -23,6 +28,7 @@ import {
   recordDigestRun,
   saveBrief,
   strengthenStoryFromSignal,
+  promoteLatestReport,
   updateSourceChecked,
 } from "./storage";
 import type {
@@ -57,6 +63,7 @@ export async function loadDashboardState(env: RuntimeEnv): Promise<DashboardStat
 }
 
 export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
+  if (env.POLITILY_SCANS_PAUSED === "true") throw new ServiceError("Ingestion is paused by POLITILY_SCANS_PAUSED. Mail processing remains independent.", "SCANS_PAUSED", 300);
   if (!env.DB) {
     const demo = getDemoState();
     return {
@@ -67,25 +74,38 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
   }
 
   await ensureDatabase(env.DB);
-  await markStaleRunsFailed(env.DB);
+  const lease = await acquireLease(env.DB, "scan", 120);
+  if (!lease) throw new Error("A scan is already running. Refresh shortly.");
+  const latest = await env.DB.prepare("SELECT started_at FROM scan_runs ORDER BY started_at DESC LIMIT 1").first<{ started_at: string }>();
+  if (latest && Date.now() - Date.parse(latest.started_at) < 240000) {
+    await releaseLease(env.DB, "scan", lease);
+    throw new ServiceError("A scan started less than four minutes ago. Automatic monitoring is active; please wait before scanning again.", "SCAN_COOLDOWN", 240);
+  }
+  await markStaleRunsFailed(env.DB, 4);
   const run = await createRun(env.DB);
   const errors: string[] = [];
 
   try {
     const threshold = numberEnv(env.POLITILY_SCORE_THRESHOLD, 72);
     const alertThreshold = numberEnv(env.POLITILY_ALERT_MIN_SCORE, 82);
-    const maxBriefs = numberEnv(env.POLITILY_MAX_DEEP_BRIEFS_PER_RUN, 0);
-    const maxEmailAlerts = Math.min(numberEnv(env.POLITILY_MAX_EMAIL_ALERTS_PER_RUN, 4), 12);
-    const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 36), 40);
+    const maxBriefs = freeMode(env) ? 0 : numberEnv(env.POLITILY_MAX_DEEP_BRIEFS_PER_RUN, 0);
+    const maxEmailAlerts = freeMode(env) ? 0 : Math.min(numberEnv(env.POLITILY_MAX_EMAIL_ALERTS_PER_RUN, 4), 12);
+    const maxSources = Math.min(numberEnv(env.POLITILY_MAX_SOURCES_PER_RUN, 28), freeMode(env) ? 4 : 40);
+    const maxSignals = Math.min(numberEnv(env.POLITILY_MAX_SIGNALS_PER_RUN, 160), freeMode(env) ? 6 : 240);
     const fetchTimeoutMs = Math.min(numberEnv(env.POLITILY_FETCH_TIMEOUT_MS, 5000), 8000);
     const minStoryDate = minStoryDateEnv(env.POLITILY_MIN_STORY_DATE);
-    const maxMediaFetches = Math.min(numberEnv(env.POLITILY_MAX_MEDIA_FETCHES_PER_RUN, 10), 14);
+    const maxMediaFetches = freeMode(env) ? 0 : Math.min(numberEnv(env.POLITILY_MAX_MEDIA_FETCHES_PER_RUN, 4), 10);
     let mediaFetches = 0;
-    const scanDeadline = Date.now() + 55000;
-    const sources = rotateSources(
-      (await listSources(env.DB)).filter((source) => source.active)
-    ).slice(0, Math.max(1, maxSources));
-    const recentStories = await listRecentStories(env.DB, 160);
+    const scanDeadline = Date.now() + 45000;
+    const sources = selectSourcesForRun(
+      rotateSources((await listSources(env.DB)).filter((source) => source.active)),
+      Math.max(1, maxSources)
+    );
+    const sourceMix = summarizeSourceMix(sources);
+    const recentStories = await listRecentStories(env.DB, 160, 0);
+    const recentByFingerprint = new Map(
+      recentStories.map((story) => [story.fingerprint, story])
+    );
     const triggeredStories: StoredStory[] = [];
     const alertCandidates = new Map<string, { story: StoredStory; forceSend: boolean }>();
     let scannedCount = 0;
@@ -100,18 +120,14 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
             signals: await fetchSignals(source, fetchTimeoutMs),
           };
         } catch (error) {
-          await updateSourceChecked(env.DB!, source.id);
+          await updateSourceChecked(env.DB!, source.id, errorMessage(error), 0);
           throw new Error(`${source.name}: ${errorMessage(error)}`);
         }
       })
     );
 
+    const fetchedSources: Array<{ source: SignalSource; signals: RawSignal[] }> = [];
     for (const result of fetchResults) {
-      if (Date.now() > scanDeadline) {
-        errors.push("Scan budget reached. Remaining fetched signals will continue in the next run.");
-        break;
-      }
-
       if (result.status === "rejected") {
         errors.push(errorMessage(result.reason));
         continue;
@@ -119,9 +135,33 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
 
       const { source, signals } = result.value;
       scannedCount += signals.length;
-      await updateSourceChecked(env.DB, source.id);
+      await updateSourceChecked(env.DB, source.id, signals.length ? "" : "Feed returned no usable reports", signals.length);
+      fetchedSources.push({ source, signals });
+    }
 
-      for (const rawSignal of signals) {
+    const signalsPerSource = Math.min(
+      8,
+      Math.max(3, Math.ceil(maxSignals / Math.max(1, fetchedSources.length)))
+    );
+    const queuedSignals: RawSignal[] = [];
+    queueSignals: for (let index = 0; index < signalsPerSource; index += 1) {
+      for (const fetched of fetchedSources) {
+        const signal = fetched.signals[index];
+        if (signal) {
+          queuedSignals.push(signal);
+        }
+        if (queuedSignals.length >= maxSignals) {
+          break queueSignals;
+        }
+      }
+    }
+
+    for (const rawSignal of queuedSignals) {
+        if (Date.now() > scanDeadline || remainingQueries() < 8) {
+          errors.push("Scan processing budget reached. Remaining fetched signals will continue in the next run.");
+          break;
+        }
+
         let signal = rawSignal;
         if (isOlderThanMinimumDate(signal.publishedAt, minStoryDate) || isFromFuture(signal.publishedAt)) {
           continue;
@@ -133,10 +173,12 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
         }
 
         const scores = scoreSignal(signal, recentStories);
-        const triggerWorthy = isTriggerWorthy(signal, scores, threshold);
+        const triggerWorthy = scores.totalScore >= threshold;
         const fingerprint = fingerprintFor(signal);
-        const existing = await getStoryByFingerprint(env.DB, fingerprint);
-        const related = existing ?? findRelatedStory(signal, recentStories);
+        let related = recentByFingerprint.get(fingerprint) ?? findRelatedStory(signal, recentStories);
+        if (!related) {
+          related = await getStoryByFingerprint(env.DB, fingerprint);
+        }
 
         if (related) {
           const sourceAdded = await addStorySource(env.DB, {
@@ -149,21 +191,25 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
             sourceLane: signal.sourceLane,
             publishedAt: signal.publishedAt ?? null,
           });
-          await strengthenStoryFromSignal(env.DB, related.id, {
-            summary: signal.summary,
-            imageUrl: signal.imageUrl ?? null,
-            articleExcerpt: signal.articleExcerpt || signal.summary,
-            status: triggerWorthy ? "triggered" : "watching",
-            ...scores,
-          });
-          const updatedRelated = (await getStoryById(env.DB, related.id)) ?? {
-            ...related,
-            totalScore: Math.max(related.totalScore, scores.totalScore),
-            viralPotential: Math.max(related.viralPotential, scores.viralPotential),
-            politicalWeight: Math.max(related.politicalWeight, scores.politicalWeight),
-            sentimentScore: Math.max(related.sentimentScore, scores.sentimentScore),
-          };
+          if (shouldStrengthenStory(related, signal, scores, triggerWorthy)) {
+            await strengthenStoryFromSignal(env.DB, related.id, {
+              summary: signal.summary,
+              imageUrl: signal.imageUrl ?? null,
+              articleExcerpt: signal.articleExcerpt || signal.summary,
+              status: triggerWorthy ? "triggered" : "watching",
+              ...scores,
+            });
+          }
+          let updatedRelated = mergeStoryWithSignal(related, signal, scores, triggerWorthy);
+          if (sourceAdded && signal.publishedAt && dateValue(signal.publishedAt) > dateValue(related.publishedAt || related.detectedAt)) {
+            await promoteLatestReport(env.DB, related.id, signal, scores);
+            updatedRelated = { ...updatedRelated, ...scores, title: signal.title, summary: signal.summary,
+              url: signal.url, sourceName: signal.sourceName, sourceType: signal.sourceType,
+              articleExcerpt: signal.articleExcerpt || signal.summary, publishedAt: signal.publishedAt };
+          }
           updateRecentStory(recentStories, updatedRelated);
+          recentByFingerprint.set(fingerprint, updatedRelated);
+          recentByFingerprint.set(updatedRelated.fingerprint, updatedRelated);
           if (shouldFastAlertRelatedIssue(updatedRelated, signal, alertThreshold, sourceAdded)) {
             alertCandidates.set(updatedRelated.id, {
               story: updatedRelated,
@@ -203,6 +249,10 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
           publishedAt: story.publishedAt,
         });
         recentStories.unshift(story);
+        recentByFingerprint.set(story.fingerprint, story);
+        if (recentStories.length > 200) {
+          recentStories.length = 200;
+        }
         createdCount += 1;
 
         if (triggerWorthy) {
@@ -212,7 +262,6 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
         if (isFastAlertWorthy(signal, scores, alertThreshold)) {
           alertCandidates.set(story.id, { story, forceSend: false });
         }
-      }
     }
 
     for (const story of prioritizeBriefCandidates(triggeredStories).slice(0, maxBriefs)) {
@@ -258,12 +307,14 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
     }
 
     const finished = await finishRun(env.DB, run, {
-      status: "complete",
+      status: scannedCount > 0 ? "complete" : "failed",
       scannedCount,
       createdCount,
       triggeredCount: triggeredStories.length,
       emailedCount,
-      message: errors.length ? errors.slice(0, 3).join(" | ") : "Scan complete.",
+      message: errors.length
+        ? `${sourceMix} | ${errors.slice(0, 3).join(" | ")}`
+        : `Scan complete. ${sourceMix}`,
     });
 
     return { run: finished, triggeredStories, errors };
@@ -273,6 +324,8 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
       message: errorMessage(error),
     });
     return { run: failed, triggeredStories: [], errors: [errorMessage(error)] };
+  } finally {
+    await releaseLease(env.DB, "scan", lease);
   }
 }
 
@@ -325,13 +378,8 @@ export async function sendDueScheduledDigests(env: RuntimeEnv, now = new Date())
   }
 
   await ensureDatabase(env.DB);
-  const emailSettings = getEmailSettings(env);
-  if (!emailSettings.ready) {
-    return [{ sent: false, message: `Scheduled digest pending. ${emailSettings.message}` }];
-  }
-
   const results = [];
-  for (const slot of dueDigestSlots(now)) {
+  for (const slot of reportSlots(now)) {
     const existing = await getDigestRunByKey(env.DB, slot.key);
     if (existing) {
       continue;
@@ -342,6 +390,7 @@ export async function sendDueScheduledDigests(env: RuntimeEnv, now = new Date())
       startIso: slot.startIso,
       endIso: slot.endIso,
       label: slot.label,
+      key: slot.key,
     });
 
     if (result.sent) {
@@ -357,6 +406,7 @@ export async function sendDueScheduledDigests(env: RuntimeEnv, now = new Date())
     }
 
     results.push(result);
+    if (freeMode(env)) break;
   }
 
   return results;
@@ -373,7 +423,7 @@ export async function generateResearchBriefForQuery(env: RuntimeEnv, rawQuery: s
   }
 
   await ensureDatabase(env.DB);
-  const recentStories = await listRecentStories(env.DB, 160);
+  const recentStories = await listRecentStories(env.DB, 160, 0);
   const searchSignals = await fetchResearchSignals(query);
   const topSignals = uniqueResearchSignals(searchSignals).slice(0, 12);
   const primaryUrl = topSignals[0]?.url || googleNewsSearchUrl(query);
@@ -484,32 +534,26 @@ async function collectBriefSources(
   story: StoredStory,
   sourceLinks: Awaited<ReturnType<typeof listStorySources>>
 ) {
-  const recentStories = await listRecentStories(db, 120);
+  const recentStories = await listRecentStories(db, 120, 0);
   const relatedStories = recentStories
     .filter((candidate) => candidate.id !== story.id && isRelatedForBrief(story, candidate))
     .slice(0, 8);
-  const relatedLinks = (
-    await Promise.all(
-      relatedStories.map(async (candidate) => {
-        const candidateLinks = await listStorySources(db, candidate.id);
-        return [
-          {
-            id: `related_${candidate.id}`,
-            storyId: story.id,
-            title: candidate.title,
-            url: candidate.url,
-            sourceName: candidate.sourceName,
-            publishedAt: candidate.publishedAt,
-          },
-          ...candidateLinks.map((link) => ({
-            ...link,
-            id: `related_${candidate.id}_${link.id}`,
-            storyId: story.id,
-          })),
-        ];
-      })
-    )
-  ).flat();
+  await attachStorySources(db, relatedStories);
+  const relatedLinks = relatedStories.flatMap((candidate) => [
+    {
+      id: `related_${candidate.id}`,
+      storyId: story.id,
+      title: candidate.title,
+      url: candidate.url,
+      sourceName: candidate.sourceName,
+      publishedAt: candidate.publishedAt,
+    },
+    ...(candidate.sourceLinks ?? []).map((link) => ({
+      ...link,
+      id: `related_${candidate.id}_${link.id}`,
+      storyId: story.id,
+    })),
+  ]);
 
   return uniqueBriefLinks(sourceLinks.concat(relatedLinks)).slice(0, 20);
 }
@@ -561,10 +605,6 @@ function isRelatedForBrief(story: StoredStory, candidate: StoredStory) {
   return areSameIssue(story, candidate) || issueMatchConfidence(story, candidate) >= 0.58 || titleSimilarity(story.title, candidate.title) >= 0.66;
 }
 
-function hasAny(text: string, terms: string[]) {
-  return terms.some((term) => text.includes(term));
-}
-
 function uniqueBriefLinks(links: Awaited<ReturnType<typeof listStorySources>>) {
   const seen = new Set<string>();
   const unique: Awaited<ReturnType<typeof listStorySources>> = [];
@@ -579,38 +619,13 @@ function uniqueBriefLinks(links: Awaited<ReturnType<typeof listStorySources>>) {
   return unique;
 }
 
-function isTriggerWorthy(
-  signal: RawSignal,
-  scores: Pick<StoredStory, "totalScore" | "politicalWeight" | "viralPotential" | "tags">,
-  threshold: number
-) {
-  if (scores.totalScore >= threshold) {
-    return true;
-  }
-
-  if (isHotSignal(signal) && scores.viralPotential >= 60 && scores.politicalWeight >= 60) {
-    return true;
-  }
-
-  return scores.viralPotential >= 78 && scores.politicalWeight >= 70;
-}
-
 function isFastAlertWorthy(
   signal: RawSignal,
   scores: Pick<StoredStory, "totalScore" | "politicalWeight" | "viralPotential" | "tags">,
   alertThreshold: number
 ) {
-  if (scores.totalScore >= alertThreshold) {
-    return true;
-  }
-
-  const text = `${signal.title} ${signal.summary} ${scores.tags.join(" ")}`.toLowerCase();
-  const urgentEnoughForCreator =
-    scores.totalScore >= alertThreshold - 5 &&
-    scores.politicalWeight >= 74 &&
-    (scores.viralPotential >= 74 || hasAny(text, ["exclusive", "resign", "court", "supreme court", "parliament", "protest", "paper leak", "election", "bypoll"]));
-
-  return urgentEnoughForCreator;
+  const age = signal.publishedAt ? Date.now() - Date.parse(signal.publishedAt) : 0;
+  return scores.totalScore >= alertThreshold && age >= 0 && age <= 86400000;
 }
 
 function shouldFastAlertRelatedIssue(story: StoredStory, signal: RawSignal, alertThreshold: number, sourceAdded = false) {
@@ -618,7 +633,7 @@ function shouldFastAlertRelatedIssue(story: StoredStory, signal: RawSignal, aler
   const signalAlertWorthy = isFastAlertWorthy(signal, signalScores, alertThreshold);
 
   if (story.emailSentAt) {
-    return Boolean(sourceAdded && signalAlertWorthy);
+    return Boolean(sourceAdded && signalAlertWorthy && Date.now() - dateValue(story.emailSentAt) >= 6 * 3600000);
   }
 
   if (!sourceAdded && !signalAlertWorthy) {
@@ -629,78 +644,12 @@ function shouldFastAlertRelatedIssue(story: StoredStory, signal: RawSignal, aler
 }
 
 function prioritizeBriefCandidates(stories: StoredStory[]) {
-  return [...stories].sort((left, right) => {
-    const leftHot = hotIssueScore(left);
-    const rightHot = hotIssueScore(right);
-    if (leftHot !== rightHot) {
-      return rightHot - leftHot;
-    }
-
-    const leftBlend = left.viralPotential * 0.42 + left.politicalWeight * 0.28 + left.totalScore * 0.3;
-    const rightBlend = right.viralPotential * 0.42 + right.politicalWeight * 0.28 + right.totalScore * 0.3;
-    if (leftBlend !== rightBlend) {
-      return rightBlend - leftBlend;
-    }
-
-    return dateValue(right.publishedAt || right.detectedAt) - dateValue(left.publishedAt || left.detectedAt);
-  });
+  return [...stories].sort(compareAlertCandidates);
 }
 
 function compareAlertCandidates(left: StoredStory, right: StoredStory) {
-  return hotIssueScore(right) - hotIssueScore(left) || right.totalScore - left.totalScore || right.viralPotential - left.viralPotential;
+  return right.totalScore - left.totalScore || dateValue(right.publishedAt || right.detectedAt) - dateValue(left.publishedAt || left.detectedAt);
 }
-
-function isHotSignal(signal: RawSignal) {
-  return hasAny(`${signal.title} ${signal.summary}`.toLowerCase(), hotIssueTerms);
-}
-
-function isHotStory(story: StoredStory) {
-  return hasAny(`${story.title} ${story.summary} ${story.tags.join(" ")}`.toLowerCase(), hotIssueTerms);
-}
-
-function hotIssueScore(story: StoredStory) {
-  const text = `${story.title} ${story.summary} ${story.tags.join(" ")}`.toLowerCase();
-  let score = 0;
-  if (hasAny(text, ["cjp", "cockroach janta party", "sansad chalo", "chalo sansad", "student protest", "paper leak", "neet"])) {
-    score += 4;
-  }
-  if (hasAny(text, ["bankipur", "bypoll", "by-election", "byelection", "jan suraaj", "prashant kishor"])) {
-    score += 4;
-  }
-  if (hasAny(text, ["ban", "censorship", "cbfc", "public order", "film", "documentary", "takedown"])) {
-    score += 3;
-  }
-  if (story.viralPotential >= 72) {
-    score += 2;
-  }
-  if (story.totalScore >= 72) {
-    score += 1;
-  }
-
-  return score;
-}
-
-const hotIssueTerms = [
-  "cjp",
-  "cockroach janta party",
-  "sansad chalo",
-  "chalo sansad",
-  "student protest",
-  "paper leak",
-  "neet",
-  "bankipur",
-  "bypoll",
-  "by-election",
-  "byelection",
-  "jan suraaj",
-  "prashant kishor",
-  "ban",
-  "censorship",
-  "cbfc",
-  "film ban",
-  "public order",
-  "takedown",
-];
 
 async function fetchSignals(source: SignalSource, timeoutMs: number): Promise<RawSignal[]> {
   const response = await fetchWithTimeout(source.url, {
@@ -748,6 +697,8 @@ async function fetchSignals(source: SignalSource, timeoutMs: number): Promise<Ra
 
 function rotateSources(sources: SignalSource[]) {
   return [...sources].sort((a, b) => {
+    const checked = (a.lastCheckedAt ? Date.parse(a.lastCheckedAt) : 0) - (b.lastCheckedAt ? Date.parse(b.lastCheckedAt) : 0);
+    if (checked) return checked;
     const aFast = fastSourceRank(a);
     const bFast = fastSourceRank(b);
     if (aFast !== bFast) {
@@ -776,13 +727,124 @@ function rotateSources(sources: SignalSource[]) {
   });
 }
 
+export function selectSourcesForRun(sources: SignalSource[], requestedLimit: number) {
+  const limit = Math.max(1, requestedLimit);
+  if (limit <= 4) {
+    const core = sources.filter(source => /^(fast-google-india-politics-2h|rss-bbc-world-v3|rss-aljazeera-world-v3|rss-ndtv-latest|rss-indian-express-political-pulse|global-summits-live-v3)$/.test(source.id));
+    const chosen = core.slice(0, Math.min(2, limit));
+    return [...chosen, ...sources.filter(source => !chosen.some(item => item.id === source.id)).slice(0, limit - chosen.length)];
+  }
+  type Lane = NonNullable<SignalSource["sourceLane"]>;
+  const caps: Record<Lane, number> = {
+    portal: Math.max(10, Math.ceil(limit * 0.5)),
+    agency: Math.max(4, Math.ceil(limit * 0.17)),
+    regional: Math.max(3, Math.ceil(limit * 0.12)),
+    official: Math.max(3, Math.ceil(limit * 0.11)),
+    social: Math.max(2, Math.ceil(limit * 0.06)),
+    factcheck: Math.max(2, Math.ceil(limit * 0.06)),
+    research: 1,
+  };
+  const selected: SignalSource[] = [];
+  const selectedIds = new Set<string>();
+  const laneCounts = new Map<Lane, number>();
+  const aniCap = limit >= 24 ? 3 : 2;
+  let aniCount = 0;
+
+  const add = (source: SignalSource, enforceLaneCap: boolean, enforceAniCap: boolean) => {
+    if (selected.length >= limit || selectedIds.has(source.id)) {
+      return false;
+    }
+
+    const lane = source.sourceLane ?? defaultSourceLane(source);
+    const isAni = /\bani\b|aninews\.in/i.test(`${source.name} ${source.url}`);
+    if (enforceLaneCap && (laneCounts.get(lane) ?? 0) >= caps[lane]) {
+      return false;
+    }
+    if (enforceAniCap && isAni && aniCount >= aniCap) {
+      return false;
+    }
+
+    selected.push(source);
+    selectedIds.add(source.id);
+    laneCounts.set(lane, (laneCounts.get(lane) ?? 0) + 1);
+    if (isAni) {
+      aniCount += 1;
+    }
+    return true;
+  };
+
+  const diversityAnchors = [
+    "global-summits-live-v3",
+    "rss-bbc-world-v3",
+    "rss-aljazeera-world-v3",
+    "fast-google-india-politics-2h",
+    "fast-google-independent-newsrooms-2h",
+    "rss-indian-express-political-pulse",
+    "rss-ndtv-latest",
+    "rss-hindustan-times-latest",
+    "rss-times-of-india-india",
+    "rss-the-hindu-national",
+    "google-news-bbc-india-politics",
+    "google-news-aljazeera-india-politics",
+    "google-news-economic-times-politics",
+    "google-news-india-today-aajtak-network",
+    "fresh-google-hindi-politics-clean-24h",
+    "fresh-google-regional-language-politics-24h",
+    "pib-feed-national",
+    "prs-parliament-watch",
+    "rss-ani-national-politics",
+    "google-news-pti-uni-wire",
+    "fresh-social-viral-politics",
+    "gdelt-fact-checks",
+  ];
+  for (const sourceId of diversityAnchors) {
+    const source = sources.find((candidate) => candidate.id === sourceId);
+    if (source) {
+      add(source, false, true);
+    }
+  }
+
+  for (const source of sources) {
+    add(source, true, true);
+  }
+  for (const source of sources) {
+    if ((source.sourceLane ?? defaultSourceLane(source)) !== "agency") {
+      add(source, false, true);
+    }
+  }
+  for (const source of sources) {
+    add(source, false, true);
+  }
+  for (const source of sources) {
+    add(source, false, false);
+  }
+
+  return selected;
+}
+
+function summarizeSourceMix(sources: SignalSource[]) {
+  const counts = new Map<string, number>();
+  for (const source of sources) {
+    const lane = source.sourceLane ?? defaultSourceLane(source);
+    counts.set(lane, (counts.get(lane) ?? 0) + 1);
+  }
+
+  const summary = Array.from(counts.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([lane, count]) => `${lane} ${count}`)
+    .join(", ");
+  return `Source mix: ${summary}`;
+}
+
 function fastSourceRank(source: SignalSource) {
   const text = `${source.name} ${source.category} ${source.url} ${source.sourceLane ?? ""}`.toLowerCase();
-  if (/ani/.test(text) && /parliament|lok sabha|rajya sabha|exclusive|wire|politics/.test(text)) return 5;
-  if (/parliament|lok sabha|rajya sabha|sansad|prsindia|bill|ordinance/.test(text)) return 4;
-  if (/fast lane/.test(text)) return 4;
-  if (/pti|uni|reuters|associated press|agency|wire/.test(text)) return 3;
-  if (/freshness|direct newsroom rss/.test(text)) return 2;
+  if (/fast lane/.test(text) && source.sourceLane !== "agency") return 6;
+  if (/direct newsroom rss/.test(text)) return 5;
+  if (/freshness/.test(text) && source.sourceLane === "portal") return 5;
+  if (/parliament|lok sabha|rajya sabha|sansad|prsindia|bill|ordinance/.test(text) && source.sourceLane !== "agency") return 4;
+  if (/ani/.test(text) && /parliament|lok sabha|rajya sabha|exclusive|wire|politics/.test(text)) return 3;
+  if (/pti|uni|reuters|associated press|agency|wire/.test(text)) return 2;
+  if (/freshness/.test(text)) return 2;
   if (/hot topic/.test(text)) return 1;
   return 0;
 }
@@ -796,10 +858,12 @@ async function fetchWithTimeout(
   const timeout = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
 
   try {
-    return await fetch(input, {
+    const response = await fetch(input, {
       ...init,
       signal: controller.signal,
     });
+    const body = await response.arrayBuffer();
+    return new Response(body, { status: response.status, headers: response.headers });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error(`Timed out after ${timeoutMs}ms`);
@@ -832,21 +896,23 @@ function defaultSourceLane(source: SignalSource): NonNullable<RawSignal["sourceL
   return "portal";
 }
 
-function parseFeed(xml: string, source: SignalSource): RawSignal[] {
-  const items = Array.from(xml.matchAll(/<item\b[\s\S]*?<\/item>/gi)).slice(0, 18);
-  const entries = items.length
-    ? items.map((match) => match[0])
-    : Array.from(xml.matchAll(/<entry\b[\s\S]*?<\/entry>/gi)).slice(0, 24).map((match) => match[0]);
+export function parseFeed(xml: string, source: SignalSource): RawSignal[] {
+  const parsed = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@", parseTagValue: false }).parse(xml);
+  const raw = parsed.rss?.channel?.item || parsed.feed?.entry || [];
+  const entries = (Array.isArray(raw) ? raw : [raw]).slice(0, 24);
+  const value = (item: unknown): string => typeof item === "string" ? item : item && typeof item === "object" ? String((item as Record<string, unknown>)["#text"] || "") : "";
 
   return entries
     .map((entry) => {
-      const title = clean(extractTag(entry, "title"));
-      const summary = clean(extractTag(entry, "description") || extractTag(entry, "summary"));
-      const link = clean(extractTag(entry, "link")) || extractHref(entry);
-      const imageUrl = extractImageUrl(entry);
-      const sourceName = clean(extractTag(entry, "source")) || source.name;
+      const title = cleanText(value(entry.title));
+      const summary = cleanText(value(entry.description) || value(entry.summary) || value(entry["content:encoded"]) || value(entry.content));
+      const links = Array.isArray(entry.link) ? entry.link : [entry.link];
+      const selectedLink = links.find((item: Record<string, string> | string) => typeof item === "string" || item?.["@rel"] === "alternate") || links[0];
+      const link = value(selectedLink) || selectedLink?.["@href"] || "";
+      const imageUrl = null;
+      const sourceName = cleanText(value(entry.source)) || source.name;
       const publishedAt = parseDate(
-        extractTag(entry, "pubDate") || extractTag(entry, "published") || extractTag(entry, "updated")
+        value(entry.pubDate) || value(entry.published) || value(entry.updated)
       );
 
       return {
@@ -865,7 +931,7 @@ function parseFeed(xml: string, source: SignalSource): RawSignal[] {
         ...signalMetadata(source),
       };
     })
-    .filter((signal) => isUsableSignal(signal.title, signal.summary, signal.language) && !isNoiseSignal(signal.title, signal.summary))
+    .filter((signal) => /^https?:\/\//i.test(signal.url) && isUsableSignal(signal.title, signal.summary, signal.language) && !isNoiseSignal(signal.title, signal.summary))
     .slice(0, 16);
 }
 
@@ -877,6 +943,7 @@ function findRelatedStory(signal: RawSignal, recentStories: StoredStory[]) {
   }
 
   const issueMatch = recentStories
+    .filter(story => Math.abs(dateValue(signal.publishedAt || new Date().toISOString()) - dateValue(story.publishedAt || story.detectedAt)) < 7 * 86400000)
     .slice(0, 180)
     .find((story) => areSameIssue(story, signalLike));
   if (issueMatch) {
@@ -885,6 +952,7 @@ function findRelatedStory(signal: RawSignal, recentStories: StoredStory[]) {
 
   let best: { story: StoredStory; similarity: number } | null = null;
   for (const story of recentStories.slice(0, 140)) {
+    if (Math.abs(dateValue(signal.publishedAt || new Date().toISOString()) - dateValue(story.publishedAt || story.detectedAt)) >= 7 * 86400000) continue;
     const issueConfidence = issueMatchConfidence(signalLike, story);
     const similarity = Math.max(
       titleSimilarity(signal.title, story.title) * 0.82,
@@ -896,7 +964,7 @@ function findRelatedStory(signal: RawSignal, recentStories: StoredStory[]) {
     }
   }
 
-  if (best && best.similarity >= 0.58) {
+  if (best && best.similarity >= 0.78) {
     return best.story;
   }
 
@@ -910,6 +978,63 @@ function updateRecentStory(stories: StoredStory[], updated: StoredStory) {
   } else {
     stories.unshift(updated);
   }
+}
+
+function shouldStrengthenStory(
+  story: StoredStory,
+  signal: RawSignal,
+  scores: ReturnType<typeof scoreSignal>,
+  triggerWorthy: boolean
+) {
+  const excerpt = signal.articleExcerpt || signal.summary;
+  return (
+    scores.totalScore > story.totalScore ||
+    scores.noveltyScore > story.noveltyScore ||
+    scores.politicalWeight > story.politicalWeight ||
+    scores.geopoliticalRelevance > story.geopoliticalRelevance ||
+    scores.viralPotential > story.viralPotential ||
+    scores.sentimentScore > story.sentimentScore ||
+    signal.summary.length > story.summary.length + 80 ||
+    excerpt.length > (story.articleExcerpt?.length ?? 0) + 120 ||
+    (!story.imageUrl && Boolean(signal.imageUrl)) ||
+    (story.status === "watching" && triggerWorthy)
+  );
+}
+
+function mergeStoryWithSignal(
+  story: StoredStory,
+  signal: RawSignal,
+  scores: ReturnType<typeof scoreSignal>,
+  triggerWorthy: boolean
+): StoredStory {
+  const strongerScore = scores.totalScore >= story.totalScore;
+  const signalExcerpt = signal.articleExcerpt || signal.summary;
+  const verificationMethod = signal.verificationMethod ?? "";
+
+  return {
+    ...story,
+    summary: signal.summary.length > story.summary.length ? signal.summary : story.summary,
+    imageUrl: story.imageUrl ?? signal.imageUrl ?? null,
+    articleExcerpt:
+      signalExcerpt.length > (story.articleExcerpt?.length ?? 0)
+        ? signalExcerpt
+        : story.articleExcerpt,
+    noveltyScore: Math.max(story.noveltyScore, scores.noveltyScore),
+    politicalWeight: Math.max(story.politicalWeight, scores.politicalWeight),
+    geopoliticalRelevance: Math.max(
+      story.geopoliticalRelevance,
+      scores.geopoliticalRelevance
+    ),
+    viralPotential: Math.max(story.viralPotential, scores.viralPotential),
+    sentimentScore: Math.max(story.sentimentScore, scores.sentimentScore),
+    totalScore: Math.max(story.totalScore, scores.totalScore),
+    scoringBreakdown: strongerScore ? scores.scoringBreakdown : story.scoringBreakdown,
+    verificationMethod:
+      verificationMethod.length > (story.verificationMethod?.length ?? 0)
+        ? verificationMethod
+        : story.verificationMethod,
+    status: story.status === "watching" && triggerWorthy ? "triggered" : story.status,
+  };
 }
 
 function signalToStoryLike(signal: RawSignal): StoredStory {
@@ -947,16 +1072,6 @@ function signalToStoryLike(signal: RawSignal): StoredStory {
     verificationMethod: signal.verificationMethod ?? "",
     tags: [],
   };
-}
-
-function extractTag(value: string, tag: string) {
-  const match = value.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
-  return match?.[1] ?? "";
-}
-
-function extractHref(value: string) {
-  const match = value.match(/<link[^>]+href=["']([^"']+)["']/i);
-  return match?.[1] ?? "";
 }
 
 function extractImageUrl(value: string) {
@@ -1140,6 +1255,11 @@ function isNoiseSignal(title: string, summary: string) {
     "telephone directory",
     "tender notice",
     "recruitment notice",
+    "businesswire india",
+    "pnn new delhi",
+    "newsvoir",
+    "vmpl new delhi",
+    "enters into exclusive collaboration to promote and distribute",
   ];
 
   return noiseTerms.some((term) => text.includes(term));
@@ -1256,16 +1376,34 @@ function isUsableSignal(title: string, summary: string, language?: string) {
     return false;
   }
 
-  if (language && language.toLowerCase() !== "english" && language.toLowerCase() !== "en") {
+  const normalizedLanguage = language?.trim().toLowerCase() ?? "";
+  const supportedLanguages = [
+    "",
+    "english",
+    "en",
+    "hindi",
+    "hi",
+    "regional",
+    "bengali",
+    "punjabi",
+    "marathi",
+    "gujarati",
+    "tamil",
+    "telugu",
+    "kannada",
+    "malayalam",
+    "odia",
+  ];
+  if (!supportedLanguages.includes(normalizedLanguage)) {
     return false;
   }
 
   const text = `${title} ${summary}`;
-  if (/[\u0900-\u097f]/.test(text) || /[à¤à¥ÃÂâ]/.test(text)) {
+  if (/[à¤à¥ÃÂâ]/.test(text)) {
     return false;
   }
 
-  return /[a-z]/i.test(title);
+  return /[a-z\u0900-\u0d7f]/i.test(title);
 }
 
 function decodeMojibake(value: string) {
@@ -1327,48 +1465,6 @@ function todayDigestWindow() {
     startIso,
     endIso,
     label: `Media report - ${formatHumanDate(today)} till ${formatIstTime(endIso)}`,
-  };
-}
-
-function dueDigestSlots(now: Date) {
-  const parts = istParts(now);
-  const today = `${parts.year}-${parts.month}-${parts.day}`;
-  const minuteOfDay = Number(parts.hour) * 60 + Number(parts.minute);
-  const startIso = new Date(`${today}T00:00:00.000+05:30`).toISOString();
-  const endIso = now.toISOString();
-  const slots = [
-    { slot: "1500", minute: 15 * 60, name: "3 PM IST media report" },
-    { slot: "2100", minute: 21 * 60, name: "9 PM IST end-of-day report" },
-  ];
-
-  return slots
-    .filter((slot) => minuteOfDay >= slot.minute)
-    .map((slot) => ({
-      key: `${today}-${slot.slot}`,
-      slot: slot.slot,
-      startIso,
-      endIso,
-      label: `${slot.name} - ${formatHumanDate(today)} till ${formatIstTime(endIso)}`,
-    }));
-}
-
-function istParts(date: Date) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    day: "2-digit",
-    hour: "2-digit",
-    hour12: false,
-    minute: "2-digit",
-    month: "2-digit",
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-  }).formatToParts(date);
-  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
-  return {
-    year: part("year"),
-    month: part("month"),
-    day: part("day"),
-    hour: part("hour") === "24" ? "00" : part("hour"),
-    minute: part("minute"),
   };
 }
 

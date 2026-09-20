@@ -55,7 +55,8 @@ const issueRules: Array<{
   {
     id: "issue:bankipur-bypoll",
     label: "Bankipur bypoll and Bihar party strategy",
-    any: [/bankipur/i, /bypoll/i, /by-election/i, /byelection/i],
+    any: [/bankipur/i],
+    context: [/bypoll/i, /by-election/i, /byelection/i, /election/i],
   },
   {
     id: "issue:dharmendra-pradhan-education-accountability",
@@ -73,11 +74,6 @@ const issueRules: Array<{
     id: "issue:jailed-leaders-bill",
     label: "Bill on jailed leaders holding office",
     any: [/jailed leaders/i, /removing jailed leaders/i, /office.*jailed/i, /130th constitutional/i],
-  },
-  {
-    id: "issue:rahul-gandhi",
-    label: "Rahul Gandhi and opposition leadership",
-    any: [/rahul gandhi/i],
   },
 ];
 
@@ -228,7 +224,18 @@ const eventAnchors: Array<{ id: string; any: RegExp[] }> = [
   { id: "social-viral", any: [/viral/i, /trending/i, /hashtag/i, /video/i, /social media/i] },
 ];
 
+const frameCache = new Map<string, IssueFrame>();
 export function issueFrameFor(input: IssueInput): IssueFrame {
+  const key = `${input.title}|${input.summary || ""}|${(input.tags || []).join(",")}`;
+  const cached = frameCache.get(key);
+  if (cached) return cached;
+  const frame = computeIssueFrame(input);
+  if (frameCache.size >= 1500) frameCache.clear();
+  frameCache.set(key, frame);
+  return frame;
+}
+
+function computeIssueFrame(input: IssueInput): IssueFrame {
   const rawText = `${input.title} ${input.summary ?? ""} ${(input.tags ?? []).join(" ")}`;
   const normalisedText = normaliseIssueText(rawText);
   const searchText = `${rawText} ${normalisedText}`;
@@ -268,11 +275,11 @@ export function issueFrameFor(input: IssueInput): IssueFrame {
       .filter((anchor) => !weakTokens.has(anchor))
       .slice(0, 2)
       .join("-");
-    const umbrellaId = `issue:${topic}:${slug(primaryEntity)}:${entityContext || "general"}`;
+    const umbrellaId = `issue:${topic}:${slug(primaryEntity)}:${entityContext || tokens.filter(t => !weakTokens.has(t)).slice(0, 4).join("-")}`;
     return {
       id: umbrellaId,
       umbrellaId,
-      label: issueLabelFromEntity(primaryEntity, input.title),
+      label: cleanIssueTitle(input.title),
       partKey,
       partLabel,
       primaryEntity,
@@ -345,16 +352,13 @@ export function areSameIssue(
     return true;
   }
 
-  if (issueMatchConfidence(left, right) >= 0.72) {
+  if (issueMatchConfidence(left, right) >= 0.8) {
     return true;
   }
 
   const shared = sharedStrongTokens(leftFrame.tokens, rightFrame.tokens);
-  if (shared.length >= 3) {
-    return true;
-  }
-
-  return shared.length >= 2 && topicBucket(textFor(left)) === topicBucket(textFor(right));
+  const overlap = shared.length / Math.max(1, Math.min(leftFrame.tokens.length, rightFrame.tokens.length));
+  return shared.length >= 4 && overlap >= 0.5 && leftFrame.eventType === rightFrame.eventType;
 }
 
 export function issueSimilarity(
@@ -437,12 +441,6 @@ export function issueAnchors(value: string) {
 
 export function cleanIssueTitle(value: string) {
   return titleCase(cleanEmailLikeText(removeSourceSuffix(value))).slice(0, 140);
-}
-
-function issueLabelFromEntity(entity: string, title: string) {
-  const tokens = issueTokens(title).filter((token) => !issueTokens(entity).includes(token));
-  const context = tokens.slice(0, 4).join(" ");
-  return titleCase(`${entity}${context ? ` and ${context}` : ""}`).slice(0, 140);
 }
 
 function issuePartKey(eventType: string, anchors: string[], tokens: string[]) {
@@ -573,10 +571,6 @@ function overlapCount(left: string[], right: string[]) {
   return left.filter((value) => rightSet.has(value)).length;
 }
 
-function textFor(input: IssueInput) {
-  return `${input.title} ${input.summary ?? ""} ${input.sourceName ?? ""} ${(input.tags ?? []).join(" ")}`;
-}
-
 function removeSourceSuffix(value: string) {
   return value.replace(SOURCE_SUFFIX_PATTERN, "");
 }
@@ -615,12 +609,46 @@ function normaliseIssueText(value: string) {
   return normaliseAliases(cleanEmailLikeText(value))
     .toLowerCase()
     .replace(/https?:\/\/\S+/g, " ")
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, " ")
     .trim();
 }
 
 function normaliseAliases(value: string) {
   return value
+    .replace(/राहुल\s+गांधी/g, " rahul gandhi ")
+    .replace(/नरेंद्र\s+मोदी|प्रधानमंत्री\s+मोदी/g, " narendra modi prime minister ")
+    .replace(/अमित\s+शाह/g, " amit shah ")
+    .replace(/सुप्रीम\s+कोर्ट|उच्चतम\s+न्यायालय/g, " supreme court ")
+    .replace(/हाई\s+कोर्ट|उच्च\s+न्यायालय/g, " high court ")
+    .replace(/लोक\s*सभा/g, " lok sabha parliament ")
+    .replace(/राज्य\s*सभा/g, " rajya sabha parliament ")
+    .replace(/उपचुनाव/g, " bypoll election ")
+    .replace(/चुनाव/g, " election ")
+    .replace(/संसद/g, " parliament ")
+    .replace(/राजनीति|राजनीतिक/g, " politics political ")
+    .replace(/भारतीय|भारत/g, " india indian ")
+    .replace(/कांग्रेस/g, " congress ")
+    .replace(/भाजपा|बीजेपी/g, " bjp ")
+    .replace(/आम\s+आदमी\s+पार्टी|आप\s+पार्टी/g, " aap ")
+    .replace(/विपक्ष/g, " opposition ")
+    .replace(/सरकार/g, " government ")
+    .replace(/मुख्यमंत्री/g, " chief minister ")
+    .replace(/प्रधानमंत्री/g, " prime minister ")
+    .replace(/मंत्री/g, " minister ")
+    .replace(/विधेयक/g, " bill ")
+    .replace(/नीति/g, " policy ")
+    .replace(/योजना/g, " scheme ")
+    .replace(/बजट/g, " budget ")
+    .replace(/बेरोजगारी/g, " unemployment ")
+    .replace(/महंगाई/g, " inflation ")
+    .replace(/विरोध\s*प्रदर्शन|प्रदर्शन|आंदोलन/g, " protest ")
+    .replace(/इस्तीफा/g, " resignation ")
+    .replace(/गिरफ्तारी|गिरफ्तार/g, " arrest ")
+    .replace(/भ्रष्टाचार/g, " corruption ")
+    .replace(/हमला/g, " attack ")
+    .replace(/पाकिस्तान/g, " pakistan ")
+    .replace(/चीन/g, " china ")
+    .replace(/कश्मीर/g, " kashmir ")
     .replace(/\bp[\s.\-]*o[\s.\-]*k\b/gi, " pok pakistan occupied kashmir ")
     .replace(/\bpak(?:istan)?[\s-]*occupied\s+kashmir\b/gi, " pok pakistan occupied kashmir ")
     .replace(/\bazad\s+kashmir\b/gi, " pok pakistan occupied kashmir ")

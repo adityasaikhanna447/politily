@@ -42,9 +42,13 @@ export interface RuntimeEnv {
   POLITILY_MAX_DEEP_BRIEFS_PER_RUN?: string;
   POLITILY_MAX_EMAIL_ALERTS_PER_RUN?: string;
   POLITILY_MAX_SOURCES_PER_RUN?: string;
+  POLITILY_MAX_SIGNALS_PER_RUN?: string;
   POLITILY_FETCH_TIMEOUT_MS?: string;
   POLITILY_MIN_STORY_DATE?: string;
   POLITILY_MAX_MEDIA_FETCHES_PER_RUN?: string;
+  POLITILY_D1_MAX_ROWS_PER_JOB?: string;
+  POLITILY_SCANS_PAUSED?: string;
+  POLITILY_FREE_MODE?: string;
 }
 
 export interface SignalSource {
@@ -62,6 +66,9 @@ export interface SignalSource {
   sourceLane?: SourceLane;
   createdAt?: string;
   lastCheckedAt?: string | null;
+  lastError?: string;
+  lastSuccessAt?: string | null;
+  lastSignalCount?: number;
 }
 
 export interface RawSignal {
@@ -113,6 +120,7 @@ export interface StoredStory extends StoryScores {
   scriptText?: string | null;
   emailSentAt?: string | null;
   sourceLinks?: StorySourceLink[];
+  sourceLinksTruncated?: boolean;
 }
 
 export interface StorySourceLink {
@@ -201,6 +209,7 @@ export interface ScanRun {
 }
 
 export interface DashboardState {
+  service?: { stale: boolean; message: string; snapshotAt: string; retryAfter: number };
   demoMode: boolean;
   generatedAt: string;
   config: {
@@ -214,6 +223,7 @@ export interface DashboardState {
   stories: StoredStory[];
   sources: SignalSource[];
   runs: ScanRun[];
+  deliveries?: Array<Record<string, unknown>>;
 }
 
 export interface ScanResult {

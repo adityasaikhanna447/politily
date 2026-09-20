@@ -1,8 +1,10 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
-import { runPolitilyScan, sendDueScheduledDigests } from "../app/lib/monitor";
+import { runPolitilyScan } from "../app/lib/monitor";
+import { runMailScheduler } from "../app/lib/scheduler";
 import type { RuntimeEnv } from "../app/lib/types";
+import { freeMode, withDatabaseProtection } from "../app/lib/database-protection";
 
 interface Env {
   ASSETS: Fetcher;
@@ -23,6 +25,7 @@ interface Env {
   POLITILY_MAX_DEEP_BRIEFS_PER_RUN?: string;
   POLITILY_MAX_EMAIL_ALERTS_PER_RUN?: string;
   POLITILY_MAX_SOURCES_PER_RUN?: string;
+  POLITILY_MAX_SIGNALS_PER_RUN?: string;
   POLITILY_FETCH_TIMEOUT_MS?: string;
   POLITILY_MIN_STORY_DATE?: string;
   POLITILY_MAX_MEDIA_FETCHES_PER_RUN?: string;
@@ -74,10 +77,18 @@ const worker = {
     env: Env,
     ctx: ExecutionContext
   ): Promise<void> {
+    if (freeMode(env as RuntimeEnv)) {
+      const mail = controller.cron === "1-59/5 * * * *";
+      ctx.waitUntil(withDatabaseProtection<unknown>(env as RuntimeEnv, mail ? "scheduled-mail" : "scheduled-scan", safe => mail ? runMailScheduler(safe) : runPolitilyScan(safe))
+        .catch(error => console.error("Scheduled job deferred/failed", error)));
+      return;
+    }
     ctx.waitUntil(
-      runPolitilyScan(env as RuntimeEnv)
-        .catch(() => null)
-        .then(() => sendDueScheduledDigests(env as RuntimeEnv))
+      Promise.allSettled([
+        withDatabaseProtection(env as RuntimeEnv, "scheduled-scan", runPolitilyScan),
+        withDatabaseProtection(env as RuntimeEnv, "scheduled-mail", runMailScheduler),
+      ])
+        .then(results => { for (const result of results) if (result.status === "rejected") console.error("Scheduled job failed", result.reason); })
     );
   },
 };

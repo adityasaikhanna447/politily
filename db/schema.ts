@@ -16,6 +16,9 @@ export const sources = sqliteTable("sources", {
   active: integer("active").notNull().default(1),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   lastCheckedAt: text("last_checked_at"),
+  lastError: text("last_error").notNull().default(""),
+  lastSuccessAt: text("last_success_at"),
+  lastSignalCount: integer("last_signal_count").notNull().default(0),
 });
 
 export const stories = sqliteTable("stories", {
@@ -82,4 +85,17 @@ export const emailDigests = sqliteTable("email_digests", {
   issueCount: integer("issue_count").notNull().default(0),
   storyCount: integer("story_count").notNull().default(0),
   message: text("message").notNull().default(""),
+});
+
+export const appLocks = sqliteTable("app_locks", {
+  name: text("name").primaryKey(), owner: text("owner").notNull(), expiresAt: text("expires_at").notNull(),
+});
+
+export const emailOutbox = sqliteTable("email_outbox", {
+  id: text("id").primaryKey(), kind: text("kind").notNull(), storyId: text("story_id"),
+  subject: text("subject").notNull(), payloadJson: text("payload_json").notNull(),
+  status: text("status").notNull().default("queued"), attempts: integer("attempts").notNull().default(0),
+  providerId: text("provider_id"), lastError: text("last_error").notNull().default(""),
+  createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(), nextAttemptAt: text("next_attempt_at").notNull(),
+  leaseUntil: text("lease_until"), acceptedAt: text("accepted_at"),
 });

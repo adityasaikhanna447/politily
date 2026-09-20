@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { generateAndSaveBrief, generateResearchBriefForQuery, loadDashboardState } from "../../lib/monitor";
 import type { RuntimeEnv } from "../../lib/types";
+import { errorResponse, freeMode, withDatabaseProtection } from "../../lib/database-protection";
 
 export const dynamic = "force-dynamic";
 
@@ -12,17 +13,16 @@ export async function POST(request: Request) {
     }
 
     const runtimeEnv = env as unknown as RuntimeEnv;
-    const story = body.storyId
-      ? await generateAndSaveBrief(runtimeEnv, body.storyId)
-      : await generateResearchBriefForQuery(runtimeEnv, body.query || "");
+    const story = await withDatabaseProtection(runtimeEnv, "research", safe => body.storyId
+      ? generateAndSaveBrief(safe, body.storyId)
+      : generateResearchBriefForQuery(safe, body.query || ""));
     if (!story) {
       return Response.json({ error: "Story not found or storage unavailable." }, { status: 404 });
     }
 
-    const state = await loadDashboardState(runtimeEnv);
+    const state = freeMode(runtimeEnv) ? undefined : await withDatabaseProtection(runtimeEnv, "dashboard-after-research", loadDashboardState);
     return Response.json({ story, state });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Brief generation failed.";
-    return Response.json({ error: message }, { status: 500 });
+    return errorResponse(error);
   }
 }

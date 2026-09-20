@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { sendStrategicDigestEmail } from "../../lib/email";
 import { listStoriesInDateRange } from "../../lib/storage";
 import type { RuntimeEnv } from "../../lib/types";
+import { errorResponse, withDatabaseProtection } from "../../lib/database-protection";
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +21,11 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as DigestRequest;
     const window = digestWindow(body);
-    const stories = await listStoriesInDateRange(runtimeEnv.DB, window.startIso, window.endIso, 180);
-    const result = await sendStrategicDigestEmail(runtimeEnv, stories, {
-      startIso: window.startIso,
-      endIso: window.endIso,
-      label: window.label,
+    const result = await withDatabaseProtection(runtimeEnv, "manual-newsletter", async safe => {
+      const stories = await listStoriesInDateRange(safe.DB!, window.startIso, window.endIso, 180);
+      return sendStrategicDigestEmail(safe, stories, {
+        startIso: window.startIso, endIso: window.endIso, label: window.label,
+      });
     });
 
     return Response.json(
@@ -37,8 +38,7 @@ export async function POST(request: Request) {
       { status: result.sent ? 200 : 400 }
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Digest email failed.";
-    return Response.json({ sent: false, message }, { status: 500 });
+    return errorResponse(error);
   }
 }
 

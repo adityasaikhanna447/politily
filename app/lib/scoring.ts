@@ -1,445 +1,71 @@
+import { cleanText } from "./presentation";
 import type { RawSignal, StoryScores, StoredStory } from "./types";
 
-const politicalTerms = [
-  "election",
-  "vote",
-  "parliament",
-  "assembly",
-  "government",
-  "minister",
-  "cabinet",
-  "policy",
-  "bill",
-  "court",
-  "constitution",
-  "party",
-  "campaign",
-  "bypoll",
-  "by-election",
-  "byelection",
-  "coalition",
-  "opposition",
-  "administration",
-  "governor",
-  "president",
-  "prime minister",
-  "chief minister",
-  "lok sabha",
-  "rajya sabha",
-  "censorship",
-  "public order",
-  "cbfc",
-  "cjp",
-  "cockroach janta party",
-  "sansad chalo",
-  "chalo sansad",
-  "neet",
-  "paper leak",
-  "student protest",
-  "bankipur",
-  "rights",
-  "commission",
-  "bjp",
-  "congress",
-  "aap",
-  "dmk",
-  "tmc",
-  "sp",
-  "rjd",
-  "jdu",
-  "india bloc",
-  "unemployment",
-  "inflation",
-  "budget",
-  "welfare",
-  "scheme",
+const politics = ["election", "elections", "bypoll", "government", "minister", "president", "parliament", "cabinet", "bill", "court", "policy", "constitution", "coalition", "opposition", "bjp", "congress", "dmk", "aap", "tmc", "सरकार", "संसद", "मंत्री", "चुनाव", "अदालत"];
+const foreign = ["brics", "g20", "g7", "sco", "quad", "summit", "diplomacy", "treaty", "trade", "tariff", "ceasefire", "war", "border", "china", "pakistan", "ukraine", "russia", "gaza", "iran", "israel", "united states", "nato", "ब्रिक्स", "शिखर सम्मेलन", "चीन", "पाकिस्तान"];
+const impact = ["budget", "inflation", "unemployment", "jobs", "education", "health", "tax", "welfare", "rights", "students", "neet", "paper leak", "election", "elections", "ceasefire", "war", "treaty", "brics", "summit", "tariff", "disaster", "flood"];
+const tension = ["resignation", "resigns", "arrest", "arrested", "protest", "protests", "strike", "violence", "ban", "scandal", "leak", "backlash", "corruption", "clash", "killed", "attack"];
+const decision = ["announces", "approves", "approved", "agrees", "signs", "signed", "passes", "rules", "ruling", "verdict", "resigns", "arrested", "declares", "launches", "ceasefire", "summit", "election result", "results"];
+const tags: Array<[string, string[]]> = [
+  ["election", ["election", "elections", "bypoll", "by-election", "ballot"]],
+  ["parliament", ["parliament", "lok sabha", "rajya sabha", "bill"]],
+  ["economy-policy", ["budget", "inflation", "unemployment", "welfare", "tax", "gst", "jobs"]],
+  ["foreign-policy-india", ["brics", "summit", "jaishankar", "mea", "bilateral", "pakistan", "china"]],
+  ["global-politics", foreign], ["courts", ["court", "judgment", "verdict", "bail"]],
+  ["youth-protest", ["protest", "protests", "students", "neet", "paper leak"]],
+  ["party-bjp", ["bjp", "bharatiya janata"]], ["party-congress", ["congress", "rahul gandhi"]],
+  ["party-regional", ["aap", "dmk", "tmc", "rjd", "jdu", "samajwadi", "tdp"]],
+  ["opposition-india-bloc", ["india bloc", "opposition alliance"]],
+  ["social-viral", ["social media", "viral", "reddit", "youtube"]],
+  ["fact-check", ["fact check", "fact-check", "misinformation", "hoax"]],
 ];
 
-const geopoliticalTerms = [
-  "border",
-  "sanction",
-  "summit",
-  "treaty",
-  "war",
-  "conflict",
-  "ceasefire",
-  "diplomacy",
-  "foreign",
-  "embassy",
-  "security council",
-  "china",
-  "pakistan",
-  "russia",
-  "ukraine",
-  "united states",
-  "eu",
-  "g7",
-  "brics",
-  "global south",
-];
-
-const indiaForeignPolicyTerms = [
-  "china",
-  "pakistan",
-  "united states",
-  "us",
-  "border",
-  "lac",
-  "loc",
-  "mea",
-  "jaishankar",
-  "foreign minister",
-  "diplomacy",
-  "treaty",
-  "bilateral",
-  "strategic",
-  "defence",
-];
-
-const viralTerms = [
-  "resigns",
-  "resign",
-  "arrest",
-  "raid",
-  "protest",
-  "march",
-  "lathi charge",
-  "tear gas",
-  "students",
-  "student",
-  "youth",
-  "paper leak",
-  "violence",
-  "ban",
-  "leak",
-  "scandal",
-  "controversy",
-  "supreme court",
-  "breaking",
-  "exclusive",
-  "clash",
-  "collapse",
-  "defection",
-  "alliance",
-  "bypoll",
-  "by-election",
-  "bankipur",
-  "chalo sansad",
-  "sansad chalo",
-  "cjp",
-  "cockroach janta party",
-  "jantar mantar",
-  "neet",
-  "education minister",
-  "detention",
-  "detained",
-  "police",
-  "jan suraaj",
-  "prashant kishor",
-  "prestige battle",
-  "home turf",
-  "caste",
-  "communal",
-  "corruption",
-  "censorship",
-  "public order",
-  "film ban",
-  "takedown",
-  "misinformation",
-  "disinformation",
-  "backlash",
-  "boycott",
-  "trend",
-  "viral",
-  "x post",
-  "reddit",
-  "youtube",
-];
-
-const sentimentRiskTerms = [
-  "anger",
-  "angry",
-  "outrage",
-  "backlash",
-  "protest",
-  "clash",
-  "violence",
-  "arrest",
-  "detained",
-  "lathi charge",
-  "tear gas",
-  "ban",
-  "censorship",
-  "corruption",
-  "scandal",
-  "paper leak",
-  "unemployment",
-  "inflation",
-  "communal",
-  "caste",
-  "rights",
-  "boycott",
-];
-
-export function fingerprintFor(signal: Pick<RawSignal, "title" | "url" | "sourceName">) {
-  const basis = `${normalise(signal.title)}|${normalise(signal.url)}|${normalise(
-    signal.sourceName
-  )}`;
-  return hashText(basis);
+function matches(text: string, terms: string[]) {
+  return terms.filter(term => new RegExp(`(?:^|[^\\p{L}\\p{N}])${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^\\p{L}\\p{N}])`, "iu").test(text));
 }
+const cap = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
 
-export function scoreSignal(signal: RawSignal, recentStories: StoredStory[]): StoryScores {
-  const text = `${signal.title} ${signal.summary}`.toLowerCase();
-  const maxSimilarity = recentStories.reduce(
-    (max, story) => Math.max(max, titleSimilarity(signal.title, story.title)),
-    0
-  );
-  const noveltyScore = clamp(Math.round(100 - maxSimilarity * 92));
-  const politicalHits = matchedTerms(text, politicalTerms);
-  const geopoliticalHits = matchedTerms(text, geopoliticalTerms);
-  const indiaForeignHits = matchedTerms(text, indiaForeignPolicyTerms);
-  const viralHits = matchedTerms(text, viralTerms);
-  const sentimentHits = matchedTerms(text, sentimentRiskTerms);
-  const velocity = velocityBoost(signal.publishedAt);
-  const politicalWeight = clamp(scoreKeywordSetFromHits(politicalHits.length, signal.sourcePriority));
-  const geopoliticalRelevance = clamp(scoreKeywordSetFromHits(geopoliticalHits.length + indiaForeignHits.length, 28));
-  const viralPotential = clamp(scoreKeywordSetFromHits(viralHits.length, 24) + headlineTension(signal.title) + velocity);
-  const sentimentScore = clamp(36 + sentimentHits.length * 10 + Math.round(viralPotential * 0.18) + velocity);
-  const hotTopicBoost = hotTopicSignalBoost(text);
-  const tags = inferTags(text);
-  const sourceAuthority = sourceAuthorityScore(signal);
-  const domesticFloor = isDomesticPoliticalSignal(text, tags) ? 56 : geopoliticalRelevance;
-  const geoOrDomesticRelevance = Math.max(geopoliticalRelevance, domesticFloor);
-  const creatorUrgencyBoost = creatorUrgencySignalBoost(text, signal, tags);
-
-  const totalScore = clamp(
-    Math.round(
-      noveltyScore * 0.18 +
-        politicalWeight * 0.32 +
-        geoOrDomesticRelevance * 0.1 +
-        viralPotential * 0.25 +
-        sentimentScore * 0.08 +
-        sourceAuthority * 0.07 +
-        hotTopicBoost +
-        creatorUrgencyBoost
-    )
-  );
-  const scoringBreakdown = {
-    noveltySignals: [
-      maxSimilarity > 0.7
-        ? "Similar issue already seen recently"
-        : maxSimilarity > 0.35
-          ? "Partial overlap with a recent issue"
-          : "Fresh headline against recent stored issues",
-    ],
-    politicalSignals: politicalHits.slice(0, 10),
-    geopoliticalSignals: uniqueStrings([...indiaForeignHits, ...geopoliticalHits]).slice(0, 10),
-    viralSignals: viralHits.slice(0, 10),
-    sentimentSignals: sentimentHits.slice(0, 10),
-    velocitySignal: velocity
-      ? `Freshness boost ${velocity}: source timestamp is recent or breaking`
-      : "No freshness boost from timestamp",
-    sourceSignal: `Source priority ${signal.sourcePriority}; lane ${signal.sourceLane ?? "portal"}; bias ${signal.biasLean ?? "unknown"}`,
-    formula: "Indian audience score = novelty 18% + political 32% + geo/domestic relevance 10% + viral 25% + sentiment 8% + source authority 7% + creator urgency boosts",
-  };
-
+export function scoreSignal(signal: RawSignal, recentStories: StoredStory[] = []): StoryScores {
+  const text = cleanText(`${signal.title} ${signal.summary}`).toLowerCase();
+  const p = matches(text, politics), g = matches(text, foreign), i = matches(text, impact);
+  const v = matches(text, tension), d = matches(text, decision);
+  const similarity = recentStories.slice(0, 160).reduce((max, story) => Math.max(max, titleSimilarity(signal.title, story.title)), 0);
+  const noveltyScore = cap(100 - similarity * 65);
+  const politicalWeight = cap(20 + Math.min(4, p.length) * 14 + Math.min(2, d.length) * 10);
+  const geopoliticalRelevance = cap(g.length ? 42 + Math.min(4, g.length) * 12 : 10);
+  const publicImpact = cap(20 + Math.min(4, i.length) * 17 + Math.min(2, d.length) * 8);
+  const viralPotential = cap(20 + Math.min(4, v.length) * 15 + Math.min(2, i.length) * 10);
+  const sentimentScore = cap(v.length * 18);
+  const ageHours = signal.publishedAt ? (Date.now() - Date.parse(signal.publishedAt)) / 3600000 : null;
+  const freshness = ageHours === null || !Number.isFinite(ageHours) ? 30 : ageHours < -0.1 ? 0 : ageHours < 2 ? 100 : ageHours < 6 ? 80 : ageHours < 24 ? 55 : ageHours < 48 ? 20 : 0;
+  const substance = Math.max(politicalWeight, geopoliticalRelevance);
+  const commercial = /\b(sponsored|advertorial|brand promotion|partner content)\b/.test(text);
+  const totalScore = cap(substance * .30 + publicImpact * .25 + freshness * .20 + noveltyScore * .10 + viralPotential * .15 - (commercial ? 40 : 0));
   return {
-    noveltyScore,
-    politicalWeight,
-    geopoliticalRelevance,
-    viralPotential,
-    sentimentScore,
-    totalScore,
-    tags,
-    scoringBreakdown,
+    noveltyScore, politicalWeight, geopoliticalRelevance, viralPotential, sentimentScore, totalScore,
+    tags: tags.filter(([, terms]) => matches(text, terms).length).map(([tag]) => tag),
+    scoringBreakdown: {
+      noveltySignals: [similarity > .65 ? "Substantial overlap with existing reporting" : "New or developing report"],
+      politicalSignals: [...p, ...d], geopoliticalSignals: g,
+      viralSignals: [...v, ...i], sentimentSignals: v,
+      velocitySignal: `Freshness ${freshness}/100. ${ageHours === null ? "Publisher timestamp unavailable; detection is not publication." : "Based on publisher timestamp, not measured sharing velocity."}`,
+      sourceSignal: `Public impact ${publicImpact}/100. ${signal.sourceLane || "portal"} feed. Source crawl priority is NOT a ranking input. Share counts are unavailable.`,
+      formula: "v3: relevance max(political, geopolitical) 30% + public impact 25% + freshness 20% + novelty 10% + attention cues 15%. Editorial heuristic, not a truth score or view forecast.",
+    },
   };
 }
 
 export function titleSimilarity(a: string, b: string) {
-  const left = new Set(tokenise(a));
-  const right = new Set(tokenise(b));
-  if (left.size === 0 || right.size === 0) {
-    return 0;
-  }
-
-  let shared = 0;
-  left.forEach((token) => {
-    if (right.has(token)) {
-      shared += 1;
-    }
-  });
-
-  return shared / Math.max(left.size, right.size);
+  const tokenize = (value: string) => new Set(cleanText(value).toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, " ").split(/\s+/).filter(t => t.length > 2 && !["the", "and", "for", "with", "from", "that"].includes(t)));
+  const left = tokenize(a), right = tokenize(b);
+  return left.size && right.size ? [...left].filter(t => right.has(t)).length / Math.max(left.size, right.size) : 0;
 }
 
-function matchedTerms(text: string, terms: string[]) {
-  return terms.filter((term) => text.includes(term));
-}
-
-function scoreKeywordSetFromHits(hits: number, base: number) {
-  return Math.min(100, base + hits * 12);
-}
-
-function velocityBoost(publishedAt?: string | null) {
-  if (!publishedAt) {
-    return 0;
-  }
-
-  const ageMs = Date.now() - Date.parse(publishedAt);
-  if (!Number.isFinite(ageMs) || ageMs < 0) {
-    return 0;
-  }
-
-  const hours = ageMs / (1000 * 60 * 60);
-  if (hours <= 2) return 12;
-  if (hours <= 6) return 8;
-  if (hours <= 24) return 4;
-  return 0;
-}
-
-function headlineTension(title: string) {
-  const words = title.split(/\s+/).filter(Boolean).length;
-  const hasQuestion = title.includes("?") ? 8 : 0;
-  const hasNumbers = /\d/.test(title) ? 8 : 0;
-  const lengthFit = words >= 6 && words <= 16 ? 12 : 4;
-  return hasQuestion + hasNumbers + lengthFit;
-}
-
-function inferTags(text: string) {
-  const tags = new Set<string>();
-  const checks: Array<[string, string[]]> = [
-    ["india", ["india", "delhi", "lok sabha", "rajya sabha", "bjp", "congress"]],
-    ["election", ["election", "vote", "poll", "campaign", "bypoll", "by-election", "byelection"]],
-    ["bypoll", ["bypoll", "by-election", "byelection", "bankipur"]],
-    ["governance", ["policy", "bill", "administration", "minister", "cabinet"]],
-    ["courts", ["court", "supreme court", "high court", "constitution"]],
-    ["censorship", ["censorship", "ban", "cbfc", "film", "takedown", "free speech", "public order"]],
-    ["culture", ["film", "cinema", "documentary", "religion", "identity", "community"]],
-    ["youth-protest", ["cjp", "cockroach janta party", "sansad chalo", "chalo sansad", "student protest", "neet", "paper leak", "jantar mantar"]],
-    ["states", ["punjab", "kashmir", "manipur", "assam", "bengal", "tamil nadu", "kerala", "maharashtra", "bihar", "uttar pradesh"]],
-    ["geopolitics", geopoliticalTerms],
-    ["foreign-policy-india", indiaForeignPolicyTerms],
-    ["global-politics", ["united nations", "brics", "g7", "global south", "russia", "ukraine", "war", "conflict"]],
-    ["party-bjp", ["bjp", "bharatiya janata party"]],
-    ["party-congress", ["congress", "indian national congress"]],
-    ["party-regional", ["aap", "dmk", "tmc", "sp", "rjd", "jdu", "shiv sena", "ncp", "aiadmk", "bsp", "cpi"]],
-    ["opposition-india-bloc", ["india bloc", "opposition bloc", "opposition alliance", "india alliance"]],
-    ["economy-policy", ["budget", "inflation", "unemployment", "welfare", "scheme", "subsidy", "tax", "gst", "jobs"]],
-    ["party-politics", ["party", "coalition", "opposition", "defection", "alliance"]],
-    ["social-viral", ["viral", "trend", "x post", "reddit", "youtube", "social media"]],
-    ["public-order", ["protest", "violence", "clash", "security"]],
-    ["fact-check", ["misinformation", "disinformation", "fake", "hoax", "fact check"]],
-  ];
-
-  checks.forEach(([tag, terms]) => {
-    if (terms.some((term) => text.includes(term))) {
-      tags.add(tag);
-    }
-  });
-
-  return Array.from(tags).slice(0, 6);
-}
-
-function hotTopicSignalBoost(text: string) {
-  if (
-    [
-      "cjp",
-      "cockroach janta party",
-      "sansad chalo",
-      "chalo sansad",
-      "bankipur",
-      "bypoll",
-      "by-election",
-      "byelection",
-      "jan suraaj",
-      "prashant kishor",
-      "film ban",
-      "censorship",
-      "public order",
-    ].some((term) => text.includes(term))
-  ) {
-    return 8;
-  }
-
-  return 0;
-}
-
-function sourceAuthorityScore(signal: RawSignal) {
-  const lane = signal.sourceLane ?? "portal";
-  const source = `${signal.sourceName} ${signal.sourceId} ${signal.url}`.toLowerCase();
-  if (lane === "official" || /\.gov\.in|prsindia|loksabha|rajyasabha|supremecourt|eci\.gov/.test(source)) return 92;
-  if (lane === "agency" || /ani|pti|uni|reuters|associated press|afp/.test(source)) return 86;
-  if (lane === "factcheck") return 82;
-  if (lane === "regional") return 72;
-  if (lane === "social") return 48;
-  if (lane === "research") return 70;
-  return Math.max(58, Math.min(84, signal.sourcePriority));
-}
-
-function isDomesticPoliticalSignal(text: string, tags: string[]) {
-  return (
-    tags.some((tag) =>
-      [
-        "india",
-        "election",
-        "bypoll",
-        "governance",
-        "courts",
-        "youth-protest",
-        "party-bjp",
-        "party-congress",
-        "party-regional",
-        "opposition-india-bloc",
-        "economy-policy",
-        "party-politics",
-        "public-order",
-      ].includes(tag)
-    ) ||
-    /india|bjp|congress|aap|dmk|tmc|rjd|jdu|lok sabha|rajya sabha|parliament|minister|court|election|bypoll|protest/.test(text)
-  );
-}
-
-function creatorUrgencySignalBoost(text: string, signal: RawSignal, tags: string[]) {
-  let boost = 0;
-  if (/exclusive|documents show|reveals|revealed|leak|leaked|probe|investigation|scam|corruption/.test(text)) boost += 5;
-  if (/supreme court|high court|court|plea|hearing|order|judgment|constitution/.test(text)) boost += 4;
-  if (/parliament|lok sabha|rajya sabha|bill|speaker|session|ordinance/.test(text)) boost += 4;
-  if (/protest|march|detained|arrest|lathi charge|students|youth|public order/.test(text)) boost += 4;
-  if (/election|bypoll|by-election|candidate|seat|campaign|alliance/.test(text)) boost += 4;
-  if (/resign|resignation|minister|chief minister|prime minister|opposition|bjp|congress|aap|dmk|tmc|rjd|jdu/.test(text)) boost += 3;
-  if ((signal.sourceLane === "agency" || signal.sourceLane === "official") && tags.some((tag) => tag !== "india")) boost += 2;
-  return Math.min(14, boost);
-}
-
-function uniqueStrings(values: string[]) {
-  return Array.from(new Set(values.filter(Boolean)));
-}
-
-function tokenise(value: string) {
-  return normalise(value)
-    .split(" ")
-    .filter((token) => token.length > 2)
-    .filter((token) => !["the", "and", "for", "with", "from", "that"].includes(token));
-}
-
-function normalise(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/https?:\/\/\S+/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function hashText(value: string) {
+// Keep the existing fingerprint algorithm so deployments do not reinsert old reports.
+export function fingerprintFor(signal: Pick<RawSignal, "title" | "url" | "sourceName">) {
+  const normalize = (value: string) => value.toLowerCase().replace(/https?:\/\/\S+/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const basis = `${normalize(signal.title)}|${normalize(signal.url)}|${normalize(signal.sourceName)}`;
   let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
+  for (let i = 0; i < basis.length; i++) { hash ^= basis.charCodeAt(i); hash = Math.imul(hash, 16777619); }
   return `fp_${(hash >>> 0).toString(36)}`;
-}
-
-function clamp(value: number) {
-  return Math.max(0, Math.min(100, value));
 }
