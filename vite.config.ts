@@ -17,13 +17,14 @@ const localBindingConfig = {
     POLITILY_ALERT_MIN_SCORE: "82",
     POLITILY_MAX_DEEP_BRIEFS_PER_RUN: "0",
     POLITILY_MAX_EMAIL_ALERTS_PER_RUN: "4",
-    POLITILY_MAX_SOURCES_PER_RUN: "36",
+    POLITILY_MAX_SOURCES_PER_RUN: "28",
+    POLITILY_MAX_SIGNALS_PER_RUN: "160",
     POLITILY_FETCH_TIMEOUT_MS: "5000",
     POLITILY_MIN_STORY_DATE: "2026-07-20T00:00:00+05:30",
-    POLITILY_MAX_MEDIA_FETCHES_PER_RUN: "10",
+    POLITILY_MAX_MEDIA_FETCHES_PER_RUN: "4",
   },
   triggers: {
-    crons: ["*/2 * * * *", "30 9,15 * * *"],
+    crons: ["*/5 * * * *"],
   },
   d1_databases: [
     {
