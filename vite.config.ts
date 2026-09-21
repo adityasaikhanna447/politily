@@ -2,8 +2,8 @@ import vinext from "vinext";
 import { defineConfig } from "vite";
 import { cloudflare } from "@cloudflare/vite-plugin";
 
-const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
-  "43c380f8-2924-41a1-9bdb-707cba1c22fe";
+// Existing politily-d1 database, confirmed in the Cloudflare Overview screenshot.
+const POLITILY_DATABASE_ID = "3d2c02a8-6529-4408-8c8d-4d5702251456";
 
 const localBindingConfig = {
   main: "./worker/index.ts",
@@ -34,7 +34,7 @@ const localBindingConfig = {
     {
       binding: "DB",
       database_name: "politily-d1",
-      database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
+      database_id: POLITILY_DATABASE_ID,
     },
   ],
   r2_buckets: [],

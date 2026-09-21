@@ -1,4 +1,13 @@
-# Newsroom 3.2 Release Verification
+# Newsroom 3.3 Release Verification
+
+## Replacement Database Connection
+
+- Replaced the deleted D1 ID with 3d2c02a8-6529-4408-8c8d-4d5702251456 from
+  the user's politily-d1 Overview screenshot. Binding name remains DB.
+- Packaging refuses the known deleted ID or old placeholder constant.
+- Updated beginner instructions for reconnecting and automatic table setup.
+- Runtime release marker is newsroom-3.3-d1-binding; the schema is unchanged.
+- No production deployment or old-data recovery is implied by this source update.
 
 ## Free Mode and Archive
 
@@ -56,7 +65,8 @@
 
 ## Not Verified
 
-- Production deployment, your D1 binding ID, Resend credentials/domain restrictions,
+- Production deployment and successful queries against the replacement D1 database,
+  Resend credentials/domain restrictions,
   actual inbox delivery, live scheduled execution or sustained production D1 usage.
 - Every upstream feed remaining accessible: publishers may return errors, block requests,
   change their feeds or delay indexing. Source health is displayed rather than hidden.

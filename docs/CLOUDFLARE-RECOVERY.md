@@ -1,11 +1,22 @@
 # Recover Without Buying a Plan
 
-The last live check returned a D1 daily row-read quota error, not a DNS error.
+## Deleted Database Binding
+
+The later screenshot showed a deleted database, then zero databases in the account.
+This is different from a daily quota block; waiting for reset cannot fix this error.
+The user created politily-d1 with ID 3d2c02a8-6529-4408-8c8d-4d5702251456.
+Release 3.3 uses that ID. Select this database for the Worker's DB binding, upload
+the corrected source and deploy. The app initializes tables in small batches.
+The new database starts empty; previous news and briefs are not recovered by this fix.
+
+## Daily Quota Block
+
+An earlier live check returned a D1 daily row-read quota error, not a DNS error.
 The static page can load while database-backed news and email jobs fail.
 
 1. Pause the old cron triggers while updating so the old code does not repeat the waste.
 2. Keep the existing D1 database. Do not delete its tables or replace the DB binding.
-3. Upload/deploy release 3.2 using START-HERE-BEGINNER.md.
+3. Upload/deploy release 3.3 using START-HERE-BEGINNER.md.
 4. If still blocked, wait for the daily reset: 00:00 UTC / 5:30 AM IST.
 5. Restore the two intended Free-mode cron triggers and test one email in Delivery.
 

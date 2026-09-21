@@ -1,8 +1,10 @@
 # Politily Free Edition - Beginner Steps
 
 No paid Cloudflare upgrade is required for this reduced-workload release.
-Your existing database and news are preserved. No files have been pushed to GitHub
-or deployed by Codex. Use this release instead of the older 3.0/3.1 ZIPs.
+Release 3.3 connects to the replacement politily-d1 database shown in your screenshot.
+It starts empty; the old news and briefs are NOT restored by this update.
+No files have been pushed to GitHub or deployed by Codex. Use this release instead
+of the older 3.0/3.1/3.2 ZIPs.
 
 ## Step 1: Find the Files
 
@@ -18,11 +20,12 @@ Do not upload the containing folder itself or the ZIP into the repository.
 
 An existing Cloudflare GitHub connection may deploy automatically when you commit.
 First check Cloudflare > Workers & Pages > politily > Bindings. The D1 binding must
-be named DB and point to your existing politily-d1 database. Open that database's
-Overview and compare its Database ID with `database_id` in `vite.config.ts`.
-The current file contains 43c380f8-2924-41a1-9bdb-707cba1c22fe, which has not been
-verified against your account. Correct it if different. Never create a replacement
-database to match the file. Ask Codex to help if uncertain.
+be named DB and point to the politily-d1 database you just created. Its Overview
+shows Database ID 3d2c02a8-6529-4408-8c8d-4d5702251456. This ID is now included
+in vite.config.ts. Do not create another database or paste this ID into a secret.
+Edit the existing DB binding to select politily-d1 and save/deploy. If no DB binding
+exists, use Add binding > D1 database with variable name DB and select politily-d1.
+Updating GitHub as well is essential so later deployments preserve this connection.
 
 If the live app is still exhausting quota, temporarily remove its old cron triggers
 while you prepare this update. Record them first. This pauses scans/mail, not data storage.
@@ -33,7 +36,7 @@ while you prepare this update. Record them first. This pauses scans/mail, not da
 2. Click Add file > Upload files.
 3. Open the upload folder above. Select its files and folders and drag them into GitHub.
    Keep folder structure; app and package.json must be at the repository root.
-4. Wait for every file to upload. Enter commit message: Politily free mode and data export.
+4. Wait for every file to upload. Enter commit message: Connect Politily to the replacement D1 database.
 5. Click Commit changes. Existing files with matching paths are replaced.
 6. If package-lock.json still exists in GitHub, delete ONLY that old lockfile using
    GitHub's file menu. Keep pnpm-lock.yaml. Never upload .dev.vars or API keys.
@@ -80,11 +83,14 @@ The second cron is needed on Free so scanning and mail do not share one query al
 ## Step 6: Verify It Works
 
 Open https://politily.adityakhanna-tcc.workers.dev/api/health
-You should see release newsroom-3.2-free-archive and freeMode true.
+You should see release newsroom-3.3-d1-binding and freeMode true.
 This diagnostic page does not query D1 or prove email delivery.
 
 Open the app. New database setup may take several small attempts; leave the page
-open or press Retry after a few seconds. Existing data is not deleted.
+open or press Retry after a few seconds. The app creates its tables and source
+catalog automatically; you do NOT need to paste SQL or create tables by hand.
+After setup finishes, click Scan now once and check Source network for feed results.
+The replacement database collects new reports; it does not recover old records.
 If D1 quota is exhausted, wait until 5:30 AM IST for the Free daily reset.
 
 In Delivery, click Send test once. Check the result in Resend > Emails, then Inbox/Spam.

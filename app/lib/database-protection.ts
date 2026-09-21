@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { RuntimeEnv } from "./types";
 
-export const RELEASE = "newsroom-3.2-free-archive";
+export const RELEASE = "newsroom-3.3-d1-binding";
 type Usage = { operation: string; queries: number; rowsRead: number; rowsWritten: number; rowBudget: number; queryBudget: number };
 const scope = new AsyncLocalStorage<Usage>();
 const wrapped = new WeakMap<D1Database, D1Database>();

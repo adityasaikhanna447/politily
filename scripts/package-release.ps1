@@ -1,6 +1,10 @@
-param([string]$Version = '3.2', [string]$ReleaseDate = '2026-09-20')
+param([string]$Version = '3.3', [string]$ReleaseDate = '2026-09-22')
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+$bindingConfig = Get-Content -LiteralPath (Join-Path $root 'vite.config.ts') -Raw
+if ($bindingConfig -match 'SITE_CREATOR_PLACEHOLDER_DATABASE_ID|43c380f8-2924-41a1-9bdb-707cba1c22fe') {
+  throw 'Refusing to package the deleted D1 database binding. Confirm the current Database ID in Cloudflare first.'
+}
 if ($Version -notmatch '^\d+\.\d+$' -or $ReleaseDate -notmatch '^\d{4}-\d{2}-\d{2}$') { throw 'Invalid release name' }
 $name = "Politily-Newsroom-$Version-$ReleaseDate"
 $release = Join-Path $root "release\$name"
