@@ -21,6 +21,7 @@ import {
   listRecentStories,
   listSources,
   listStoriesInDateRange,
+  listHourlyStories,
   listStorySources,
   markEmailSent,
   markStaleRunsFailed,
@@ -55,7 +56,7 @@ export function getRuntimeConfig(env: RuntimeEnv): DashboardState["config"] {
 
 export async function loadDashboardState(env: RuntimeEnv): Promise<DashboardState> {
   if (!env.DB) {
-    return getDemoState();
+    throw new ServiceError("The DB binding is missing. Bind the existing politily-d1 database in Cloudflare Worker settings, then redeploy. Live news requires persistent storage.", "DATABASE_NOT_BOUND", 60);
   }
 
   const config = getRuntimeConfig(env);
@@ -75,11 +76,13 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
 
   await ensureDatabase(env.DB);
   const lease = await acquireLease(env.DB, "scan", 120);
-  if (!lease) throw new Error("A scan is already running. Refresh shortly.");
-  const latest = await env.DB.prepare("SELECT started_at FROM scan_runs ORDER BY started_at DESC LIMIT 1").first<{ started_at: string }>();
-  if (latest && Date.now() - Date.parse(latest.started_at) < 240000) {
+  if (!lease) throw new ServiceError("A scan is already running. Refresh shortly.", "SCAN_RUNNING", 15);
+  const latest = await env.DB.prepare("SELECT started_at, status FROM scan_runs ORDER BY started_at DESC LIMIT 1").first<{ started_at: string; status: string }>();
+  const cooldownMs = latest?.status === "failed" ? 60000 : 240000;
+  const retrySeconds = latest ? Math.ceil((cooldownMs - (Date.now() - Date.parse(latest.started_at))) / 1000) : 0;
+  if (retrySeconds > 0) {
     await releaseLease(env.DB, "scan", lease);
-    throw new ServiceError("A scan started less than four minutes ago. Automatic monitoring is active; please wait before scanning again.", "SCAN_COOLDOWN", 240);
+    throw new ServiceError(`${latest?.status === "failed" ? "The previous scan failed; alternative sources will be tried next." : "A scan started recently."} You can scan again in ${retrySeconds} seconds.`, "SCAN_COOLDOWN", retrySeconds);
   }
   await markStaleRunsFailed(env.DB, 4);
   const run = await createRun(env.DB);
@@ -102,6 +105,7 @@ export async function runPolitilyScan(env: RuntimeEnv): Promise<ScanResult> {
       Math.max(1, maxSources)
     );
     const sourceMix = summarizeSourceMix(sources);
+    if (!sources.length) errors.push("No sources are ready: enabled feeds are cooling down after failures. Check Source network for the last errors.");
     const recentStories = await listRecentStories(env.DB, 160, 0);
     const recentByFingerprint = new Map(
       recentStories.map((story) => [story.fingerprint, story])
@@ -385,7 +389,7 @@ export async function sendDueScheduledDigests(env: RuntimeEnv, now = new Date())
       continue;
     }
 
-    const stories = await listStoriesInDateRange(env.DB, slot.startIso, slot.endIso, 180);
+    const stories = await listHourlyStories(env.DB, slot.startIso, slot.endIso);
     const result = await sendStrategicDigestEmail(env, stories, {
       startIso: slot.startIso,
       endIso: slot.endIso,
@@ -727,12 +731,28 @@ function rotateSources(sources: SignalSource[]) {
   });
 }
 
-export function selectSourcesForRun(sources: SignalSource[], requestedLimit: number) {
+export function selectSourcesForRun(sources: SignalSource[], requestedLimit: number, now = Date.now()) {
+  const host = (source: SignalSource) => {
+    try { return new URL(source.url).hostname.replace(/^www\./, ""); } catch { return source.id; }
+  };
+  const recentlyFailed = (source: SignalSource) => Boolean(source.lastError && source.lastCheckedAt && now - Date.parse(source.lastCheckedAt) < 15 * 60000);
+  // Different searches on the same failed provider are not independent fallbacks.
+  const blockedHosts = new Set(sources.filter(source => recentlyFailed(source) && /timed out|timeout|fetch failed|network|HTTP (403|429|5\d\d)/i.test(source.lastError || "")).map(host));
+  sources = rotateSources(sources.filter(source => source.active && !recentlyFailed(source) && !blockedHosts.has(host(source))));
   const limit = Math.max(1, requestedLimit);
   if (limit <= 4) {
-    const core = sources.filter(source => /^(fast-google-india-politics-2h|rss-bbc-world-v3|rss-aljazeera-world-v3|rss-ndtv-latest|rss-indian-express-political-pulse|global-summits-live-v3)$/.test(source.id));
-    const chosen = core.slice(0, Math.min(2, limit));
-    return [...chosen, ...sources.filter(source => !chosen.some(item => item.id === source.id)).slice(0, limit - chosen.length)];
+    const chosen: SignalSource[] = [];
+    const hosts = new Set<string>();
+    const add = (source?: SignalSource) => {
+      if (!source || chosen.length >= limit || hosts.has(host(source))) return;
+      chosen.push(source);
+      hosts.add(host(source));
+    };
+    const direct = sources.filter(source => source.type === "rss" && /direct newsroom rss/i.test(source.category) && !/news\.google\.com|gdeltproject\.org/.test(host(source)));
+    add(direct.find(source => /india/i.test(source.region)));
+    add(direct.find(source => source.region === "global"));
+    for (const source of sources) add(source);
+    return chosen;
   }
   type Lane = NonNullable<SignalSource["sourceLane"]>;
   const caps: Record<Lane, number> = {

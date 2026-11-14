@@ -118,7 +118,7 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS email_outbox_story_idx ON email_outbox (story_id, kind, created_at)`,
 ];
 
-const SOURCE_CATALOG_SENTINEL_ID = "global-summits-live-v3";
+const SOURCE_CATALOG_SENTINEL_ID = "youth-opportunities-v35";
 
 const legacySourceIdsToPause = [
   "gdelt-india-politics",
@@ -175,13 +175,13 @@ export async function ensureDatabase(db: D1Database) {
 
 async function ensureDatabaseOnce(db: D1Database) {
   try {
-    if (await db.prepare("SELECT owner FROM app_locks WHERE name = 'schema:newsroom-3.2'").first()) return;
+    if (await db.prepare("SELECT owner FROM app_locks WHERE name = 'schema:newsroom-3.5'").first()) return;
   } catch (error) {
     if (!/no such table/i.test(String(error))) throw error;
   }
   await db.prepare("CREATE TABLE IF NOT EXISTS app_locks (name TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at TEXT NOT NULL)").run();
   const stage = async (name: string, work: () => Promise<unknown>) => {
-    const key = `setup:3.2:${name}`;
+    const key = `setup:3.5:${name}`;
     if (await db.prepare("SELECT owner FROM app_locks WHERE name=?").bind(key).first()) return;
     await work();
     await db.prepare("INSERT OR IGNORE INTO app_locks (name,owner,expires_at) VALUES (?, 'complete', '9999-01-01T00:00:00Z')").bind(key).run();
@@ -194,7 +194,7 @@ async function ensureDatabaseOnce(db: D1Database) {
     await migrateTableColumns(db, "story_sources", storySourceColumnMigrations);
   });
   await seedSources(db);
-  await db.prepare("INSERT OR IGNORE INTO app_locks (name, owner, expires_at) VALUES ('schema:newsroom-3.2', 'complete', '9999-01-01T00:00:00Z')").run();
+  await db.prepare("INSERT OR IGNORE INTO app_locks (name, owner, expires_at) VALUES ('schema:newsroom-3.5', 'complete', '9999-01-01T00:00:00Z')").run();
   if (remainingQueries() < 35) throw new ServiceError("Database setup is complete. Retry once to open the newsroom.", "DATABASE_SETUP", 5);
 }
 
@@ -652,6 +652,21 @@ export async function listStoriesInDateRange(
   return stories;
 }
 
+// Hourly editions follow capture time, so delayed reports and updates to older
+// issues are included. Half-open windows prevent boundary reports repeating.
+export async function listHourlyStories(db: D1Database, startIso: string, endIso: string) {
+  const result = await db.prepare(`SELECT * FROM stories WHERE id IN (
+    SELECT id FROM stories WHERE detected_at > ? AND detected_at <= ?
+    UNION SELECT story_id FROM story_sources WHERE created_at > ? AND created_at <= ?
+    UNION SELECT story_id FROM story_sources WHERE created_at > ? AND created_at <= ?
+  ) ORDER BY total_score DESC, detected_at DESC LIMIT 100`)
+    .bind(startIso, endIso, startIso, endIso,
+      startIso.replace("T", " ").slice(0, 19), endIso.replace("T", " ").slice(0, 19)).all<Row>();
+  const stories = result.results.map(toStory);
+  await attachStorySources(db, stories);
+  return stories;
+}
+
 export async function listRuns(db: D1Database, limit = 8): Promise<ScanRun[]> {
   const result = await db
     .prepare("SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT ?")
@@ -695,8 +710,10 @@ export async function attachStorySources(db: D1Database, stories: StoredStory[])
     story.sourceLinksTruncated = false;
   }
 
-  for (let offset = 0; offset < stories.length; offset += 80) {
-    const storyIds = stories.slice(offset, offset + 80).map((story) => story.id);
+  // D1's SQLite compound SELECT limit is lower than desktop SQLite's default.
+  // Keep each indexed UNION small, including when all 160 cards are loaded.
+  for (let offset = 0; offset < stories.length; offset += 5) {
+    const storyIds = stories.slice(offset, offset + 5).map((story) => story.id);
     // A LIMIT inside each indexed subquery bounds reads even for years-old umbrellas.
     const result = await db
       .prepare(

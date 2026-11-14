@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Politily",
   description:
-    "Political signal detection, contextual research briefs, and creator-ready alert scripts.",
+    "India and world news, youth and public-affairs research, source trails, and hourly IST briefings.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

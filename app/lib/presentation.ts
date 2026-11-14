@@ -29,6 +29,11 @@ export function storySummary(story: Pick<StoredStory, "title" | "sourceName" | "
 export function topicLabel(story: Pick<StoredStory, "title" | "summary" | "tags">) {
   const text = `${story.title} ${story.summary} ${story.tags.join(" ")}`.toLowerCase();
   const rules: Array<[string, RegExp]> = [
+    ["People & protests", /\b(protests?|demonstrations?|strikes?|unrest|rally|rallies)\b/],
+    ["Youth & education", /\b(students?|neet|exams?|paper leak|education|university|universities|scholarships?|tuition|admissions?|recruitment)\b/],
+    ["Technology & business", /\b(ceo|nvidia|microsoft|executive|resigns?|resignation|layoffs?|artificial intelligence|ai|chips?|technology|cyberattack|data breach|antitrust|outage)\b/],
+    ["Climate & environment", /\b(climate|environment|pollution|heatwave|floods?|earthquake|cyclone|wildfire|drought|disaster|biodiversity|cop\d+|burning planet)\b/],
+    ["Health & society", /\b(health|outbreak|pandemic|disease|hospitals?|vaccines?|healthcare)\b/],
     ["Diplomacy & summits", /\b(brics|g20|g7|sco|quad|summit|diplomacy|bilateral|jaishankar|mea)\b/],
     ["World & security", /\b(war|ceasefire|ukraine|russia|israel|gaza|iran|nato|terror|border|pok|pakistan|china|united nations)\b/],
     ["Economy & policy", /\b(budget|inflation|unemployment|jobs|gst|tax|rbi|welfare|tariff|economy|trade)\b/],
@@ -48,11 +53,16 @@ export function istDate(now = new Date()) {
 
 export function reportSlots(now = new Date()) {
   const day = istDate(now);
-  return [14, 21].map((hour) => ({
-    key: `newsletter-${day}-${hour}`,
-    slot: String(hour),
-    startIso: new Date(`${day}T00:00:00+05:30`).toISOString(),
-    endIso: new Date(`${day}T${hour}:00:00+05:30`).toISOString(),
-    label: `${hour === 14 ? "Afternoon edition" : "Evening edition"} | ${day} | ${hour === 14 ? "2 PM" : "9 PM"} IST`,
-  })).filter((slot) => Date.parse(slot.endIso) <= now.getTime());
+  const hour = new Date(now.getTime() + 330 * 60000).getUTCHours();
+  if (hour < 8) return [];
+  const end = new Date(`${day}T${String(hour).padStart(2, "0")}:00:00+05:30`);
+  const start = new Date(end.getTime() - (hour === 8 ? 9 : 1) * 3600000);
+  // Only the current slot is due. Recovery must not flood the inbox with every
+  // missed hour. Pending provider attempts retain their original outbox key.
+  return [{ key: `hourly-${day}-${hour}`, slot: String(hour),
+    startIso: start.toISOString(), endIso: end.toISOString(),
+    label: `${hour === 8 ? "Morning catch-up" : "Hourly briefing"} | ${day} | ${hour > 12 ? hour - 12 : hour}:00 ${hour < 12 ? "AM" : "PM"} IST`,
+  }];
 }
+
+export const EMAIL_SCHEDULE_IST = Array.from({ length: 16 }, (_, i) => `${String(i + 8).padStart(2, "0")}:00`);

@@ -29,6 +29,28 @@ const indiaCoreTerms =
   'India OR Indian OR Delhi OR "Lok Sabha" OR "Rajya Sabha" OR parliament OR election OR BJP OR Congress OR AAP OR TMC OR DMK OR CPI OR "Samajwadi Party" OR "Shiv Sena" OR NCP';
 
 export const DEFAULT_SOURCES: SignalSource[] = [
+  ...[
+    ["rss-bbc-business-v35", "BBC Business", "https://feeds.bbci.co.uk/news/business/rss.xml", "Economy, employment & business"],
+    ["rss-bbc-technology-v35", "BBC Technology", "https://feeds.bbci.co.uk/news/technology/rss.xml", "Technology, AI & corporate leadership"],
+    ["rss-bbc-science-v35", "BBC Science & Environment", "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml", "Climate, nature & science"],
+    ["rss-bbc-health-v35", "BBC Health", "https://feeds.bbci.co.uk/news/health/rss.xml", "Public health & society"],
+    ["rss-guardian-world-v35", "The Guardian World", "https://www.theguardian.com/world/rss", "World politics & public impact"],
+  ].map(([id, name, url, coverage]): SignalSource => ({ id, name, url, type: "rss", region: "global",
+    category: `Direct newsroom RSS / ${coverage}`, priority: 96, active: true,
+    sourceLane: "portal", language: "English", biasLean: "unknown",
+    verificationMethod: "Publisher RSS report. Follow original links; verify decisive claims against primary records and independent reporting.",
+  })),
+  ...[
+    ["corporate-leadership-v35", "Corporate leadership, AI & employment", '(CEO OR "chief executive" OR Nvidia OR "Jensen Huang" OR layoffs OR "artificial intelligence") (resigns OR resignation OR appointed OR jobs OR regulation OR workers) when:1d', "global", "Technology & business"],
+    ["india-protest-desk-v35", "India protests & civil rights", '(India OR Indian) (protest OR protests OR strike OR demonstration OR "civil rights" OR "internet shutdown") when:1d', "india", "People & protests"],
+    ["climate-public-impact-v35", "Climate, disasters & public health", '(climate OR heatwave OR flood OR cyclone OR earthquake OR outbreak OR pollution) when:1d', "global", "Climate & public health"],
+    ["global-politics-desk-v35", "World politics & people", '(election OR parliament OR sanctions OR government OR ceasefire OR "human rights") when:1d', "global", "World politics"],
+    ["youth-opportunities-v35", "Youth, education & cost of living", '(India OR Indian) (students OR education OR exams OR recruitment OR unemployment OR scholarship OR "cost of living") when:1d', "india", "Youth & education"],
+  ].map(([id, name, query, region, category]): SignalSource => ({ id, name, type: "rss",
+    url: googleNewsRss(query), region, category: `Fast lane / ${category}`, priority: 150, active: true,
+    sourceLane: "portal", language: "English", biasLean: "unknown",
+    verificationMethod: "Discovery index, not verification. Check original publisher, publication time, primary documents and independent corroboration. Leadership changes require an official company filing or statement.",
+  })),
   {
     id: "global-summits-live-v3", name: "BRICS, G20 and diplomatic developments", type: "rss",
     url: googleNewsRss('(BRICS OR G20 OR summit OR bilateral OR treaty OR "foreign policy") when:12h'),

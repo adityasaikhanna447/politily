@@ -1,17 +1,19 @@
 import { acquireLease, releaseLease, retryPendingEmails } from "./delivery";
 import { groupIssues, sendSignalEmail } from "./email";
 import { sendDueScheduledDigests } from "./monitor";
-import { istDate } from "./presentation";
+import { istDate, reportSlots } from "./presentation";
 import { attachStorySources, ensureDatabase, listRecentStories } from "./storage";
 import type { RuntimeEnv } from "./types";
 import { freeMode, remainingQueries } from "./database-protection";
 
 export function priorityTarget(now = new Date()) {
   const hour = new Date(now.getTime() + 330 * 60000).getUTCHours();
+  if (hour < 8) return 0;
   return [10, 12, 14, 17, 20].filter(checkpoint => hour >= checkpoint).length;
 }
 
 export async function runMailScheduler(env: RuntimeEnv, now = new Date()) {
+  if (!reportSlots(now).length) return;
   if (!env.DB) throw new Error("Mail scheduler: D1 is not configured");
   const db = env.DB;
   await ensureDatabase(db);

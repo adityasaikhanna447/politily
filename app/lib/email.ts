@@ -19,7 +19,7 @@ function wrapper(title: string, subtitle: string, content: string, env: RuntimeE
     <p style="margin:0 0 20px;font-size:14px;font-weight:bold;">POLITILY / THE NEWSROOM</p><h1 style="margin:0;font-size:27px;line-height:1.25;">${escape(title)}</h1>
     <p style="margin:12px 0 0;font-size:14px;color:#c1c8d2;">${escape(subtitle)}</p></td></tr>
     <tr><td style="padding:24px;">${content}</td></tr>
-    <tr><td style="padding:20px 24px;background:#e9edf2;font-size:12px;line-height:1.6;">Based on captured reports, not comprehensive world coverage. Publisher repetition does not establish independent verification. Scores estimate editorial priority, not truth or predicted views.<br><a href="${safeUrl(baseUrl(env))}" style="color:#1753b9;">Open the newsroom</a> &middot; Scheduled editions: 2 PM and 9 PM IST.</td></tr>
+    <tr><td style="padding:20px 24px;background:#e9edf2;font-size:12px;line-height:1.6;">Based on captured reports, not comprehensive world coverage. Publisher repetition does not establish independent verification. Scores estimate editorial priority, not truth or predicted views.<br><a href="${safeUrl(baseUrl(env))}" style="color:#1753b9;">Open the newsroom</a> &middot; Hourly editions: 8 AM through 11 PM IST. Morning includes overnight captures.</td></tr>
     </table></td></tr></table></body></html>`;
 }
 
@@ -67,12 +67,13 @@ export async function sendStrategicDigestEmail(env: RuntimeEnv, stories: StoredS
   const sourceCount = new Set(issues.flatMap(s => linksForStory(s).map(l => l.sourceName.toLowerCase()))).size;
   const topics = [...new Set(issues.map(topicLabel))];
   const introduction = `<p style="font-size:14px;line-height:1.6;margin-top:0;">${issues.length} grouped issues &middot; ${sourceCount} publishers &middot; India &amp; world</p>
+    <p style="font-size:12px;color:#657184;line-height:1.6;">${options.key ? "This automatic edition considers up to 100 priority-ranked captured records and shows at most 60 grouped issues. Use the newsroom archive for more captured history." : "This edition uses stored reporting from your selected period."}</p>
     <p style="font-size:13px;color:#657184;line-height:1.6;">${issues.length ? "A topic-by-topic reading list with source links. Full analysis is included where a research brief exists; other entries are publisher excerpts, not AI analysis." : "No reports were captured for this edition. Check Sources and scan errors in the newsroom; this does not mean no news occurred."}${allIssues.length > issues.length ? ` Showing the top ${issues.length} of ${allIssues.length} captured issues; the full list is in the newsroom.` : ""}</p>`;
   const content = introduction + topics.map(topic => `<h2 style="font-size:17px;margin:28px 0 0;padding:12px 0;border-bottom:2px solid #1c57ad;">${escape(topic)}</h2>
     <table width="100%" cellpadding="0" cellspacing="0">${issues.filter(s => topicLabel(s) === topic).map(s => storyRow(s, env)).join("")}</table>`).join("");
   const subject = `[Politily] ${options.label} | ${issues.length} issues`;
-  const result = await deliverEmail(env, { subject, html: wrapper("The daily briefing", options.label, content, env),
-    text: `${subject}\n\n${issues.map(s => `${topicLabel(s)} | ${s.totalScore}/100\n${headline(s)}\n${storySummary(s)}\n${linksForStory(s).map(l => `${l.sourceName}: ${l.url}`).join("\n")}\n${issueUrl(env, s.id)}`).join("\n\n")}\n\n${baseUrl(env)}`,
+  const result = await deliverEmail(env, { subject, html: wrapper(options.key ? "Your hourly world briefing" : "Your research briefing", options.label, content, env),
+    text: `${subject}\n\n${options.startIso} to ${options.endIso} (UTC boundaries; edition time is IST).\n${issues.length ? "Newly captured reports and updates. Saved analysis requires review against the latest reporting." : "No reports were captured for this edition. Check source health; this does not mean no news occurred."}\n\n${issues.map(s => `${topicLabel(s)} | ${s.totalScore}/100\n${headline(s)}\n${storySummary(s)}\n${linksForStory(s).map(l => `${l.sourceName}: ${l.url}`).join("\n")}\n${issueUrl(env, s.id)}`).join("\n\n")}\n\n${baseUrl(env)}`,
   }, { key: options.key || `manual-digest-${crypto.randomUUID()}`, kind: options.key ? "newsletter" : "manual" });
   return { ...result, issueCount: issues.length, storyCount: stories.length, sourceCount };
 }

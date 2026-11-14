@@ -79,14 +79,14 @@ const worker = {
   ): Promise<void> {
     if (freeMode(env as RuntimeEnv)) {
       const mail = controller.cron === "1-59/5 * * * *";
-      ctx.waitUntil(withDatabaseProtection<unknown>(env as RuntimeEnv, mail ? "scheduled-mail" : "scheduled-scan", safe => mail ? runMailScheduler(safe) : runPolitilyScan(safe))
+      ctx.waitUntil(withDatabaseProtection<unknown>(env as RuntimeEnv, mail ? "scheduled-mail" : "scheduled-scan", safe => mail ? runMailScheduler(safe, new Date(controller.scheduledTime)) : runPolitilyScan(safe))
         .catch(error => console.error("Scheduled job deferred/failed", error)));
       return;
     }
     ctx.waitUntil(
       Promise.allSettled([
         withDatabaseProtection(env as RuntimeEnv, "scheduled-scan", runPolitilyScan),
-        withDatabaseProtection(env as RuntimeEnv, "scheduled-mail", runMailScheduler),
+        withDatabaseProtection(env as RuntimeEnv, "scheduled-mail", safe => runMailScheduler(safe, new Date(controller.scheduledTime))),
       ])
         .then(results => { for (const result of results) if (result.status === "rejected") console.error("Scheduled job failed", result.reason); })
     );

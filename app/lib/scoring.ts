@@ -3,7 +3,8 @@ import type { RawSignal, StoryScores, StoredStory } from "./types";
 
 const politics = ["election", "elections", "bypoll", "government", "minister", "president", "parliament", "cabinet", "bill", "court", "policy", "constitution", "coalition", "opposition", "bjp", "congress", "dmk", "aap", "tmc", "सरकार", "संसद", "मंत्री", "चुनाव", "अदालत"];
 const foreign = ["brics", "g20", "g7", "sco", "quad", "summit", "diplomacy", "treaty", "trade", "tariff", "ceasefire", "war", "border", "china", "pakistan", "ukraine", "russia", "gaza", "iran", "israel", "united states", "nato", "ब्रिक्स", "शिखर सम्मेलन", "चीन", "पाकिस्तान"];
-const impact = ["budget", "inflation", "unemployment", "jobs", "education", "health", "tax", "welfare", "rights", "students", "neet", "paper leak", "election", "elections", "ceasefire", "war", "treaty", "brics", "summit", "tariff", "disaster", "flood"];
+const impact = ["budget", "inflation", "unemployment", "jobs", "education", "health", "tax", "welfare", "rights", "students", "neet", "paper leak", "election", "elections", "ceasefire", "war", "treaty", "brics", "summit", "tariff", "disaster", "flood", "layoffs", "workers", "wages", "housing", "climate", "pollution", "heatwave", "outbreak", "scholarships", "tuition", "recruitment", "cyberattack", "data breach", "artificial intelligence"];
+const publicAffairs = ["ceo", "chief executive", "nvidia", "layoffs", "artificial intelligence", "education", "health", "climate", "pollution", "protest", "protests", "rights", "earthquake", "disaster", "unemployment", "workers"];
 const tension = ["resignation", "resigns", "arrest", "arrested", "protest", "protests", "strike", "violence", "ban", "scandal", "leak", "backlash", "corruption", "clash", "killed", "attack"];
 const decision = ["announces", "approves", "approved", "agrees", "signs", "signed", "passes", "rules", "ruling", "verdict", "resigns", "arrested", "declares", "launches", "ceasefire", "summit", "election result", "results"];
 const tags: Array<[string, string[]]> = [
@@ -18,6 +19,9 @@ const tags: Array<[string, string[]]> = [
   ["opposition-india-bloc", ["india bloc", "opposition alliance"]],
   ["social-viral", ["social media", "viral", "reddit", "youtube"]],
   ["fact-check", ["fact check", "fact-check", "misinformation", "hoax"]],
+  ["technology-business", ["ceo", "chief executive", "nvidia", "artificial intelligence", "layoffs", "cyberattack"]],
+  ["climate-environment", ["climate", "pollution", "heatwave", "earthquake", "flood", "disaster"]],
+  ["health-society", ["health", "outbreak", "pandemic", "hospital", "vaccine"]],
 ];
 
 function matches(text: string, terms: string[]) {
@@ -38,7 +42,8 @@ export function scoreSignal(signal: RawSignal, recentStories: StoredStory[] = []
   const sentimentScore = cap(v.length * 18);
   const ageHours = signal.publishedAt ? (Date.now() - Date.parse(signal.publishedAt)) / 3600000 : null;
   const freshness = ageHours === null || !Number.isFinite(ageHours) ? 30 : ageHours < -0.1 ? 0 : ageHours < 2 ? 100 : ageHours < 6 ? 80 : ageHours < 24 ? 55 : ageHours < 48 ? 20 : 0;
-  const substance = Math.max(politicalWeight, geopoliticalRelevance);
+  const publicRelevance = cap(20 + Math.min(4, matches(text, publicAffairs).length) * 16 + Math.min(2, d.length) * 10);
+  const substance = Math.max(politicalWeight, geopoliticalRelevance, publicRelevance);
   const commercial = /\b(sponsored|advertorial|brand promotion|partner content)\b/.test(text);
   const totalScore = cap(substance * .30 + publicImpact * .25 + freshness * .20 + noveltyScore * .10 + viralPotential * .15 - (commercial ? 40 : 0));
   return {
@@ -50,7 +55,7 @@ export function scoreSignal(signal: RawSignal, recentStories: StoredStory[] = []
       viralSignals: [...v, ...i], sentimentSignals: v,
       velocitySignal: `Freshness ${freshness}/100. ${ageHours === null ? "Publisher timestamp unavailable; detection is not publication." : "Based on publisher timestamp, not measured sharing velocity."}`,
       sourceSignal: `Public impact ${publicImpact}/100. ${signal.sourceLane || "portal"} feed. Source crawl priority is NOT a ranking input. Share counts are unavailable.`,
-      formula: "v3: relevance max(political, geopolitical) 30% + public impact 25% + freshness 20% + novelty 10% + attention cues 15%. Editorial heuristic, not a truth score or view forecast.",
+      formula: "v3: relevance max(political, geopolitical, public affairs) 30% + public impact 25% + freshness 20% + novelty 10% + attention cues 15%. Editorial heuristic, not a truth score or view forecast.",
     },
   };
 }
